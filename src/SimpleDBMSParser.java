@@ -498,12 +498,141 @@ public class SimpleDBMSParser implements SimpleDBMSParserConstants {
     return;
   }
 
+  public static void insertHandler(String query) {
+    String[] querySlice = query.split("\u005c"\u005c"");
+
+    String tableName = querySlice[0];
+    if (dbGet(tableName) == null) {
+      System.out.println("No such table");
+      return;
+    }
+    ArrayList<ArrayList<String>> table = tableMaker(tableName);
+    ArrayList<String> tableColumnList = table.get(0);
+    ArrayList<String> tableColumnMetaDataList = table.get(1);
+
+    String[] valueList = querySlice[querySlice.length - 1].split("\u005c"");
+    if (valueList.length != tableColumnList.size()) {
+      System.out.println("Insertion has failed: Types are not matched");
+      return;
+    }
+
+    ArrayList<String> primaryKeyValueList = new ArrayList<String>();
+    ArrayList<String> referenceTableNameList = new ArrayList<String>();
+        HashMap<String, ArrayList<ArrayList<String>>> referenceTableList = new HashMap<String, ArrayList<ArrayList<String>>>();
+
+    if (querySlice.length == 4) {
+      String[] insertColumnList = querySlice[1].split(",");
+      ArrayList<String> duplicateCheck = new ArrayList<String>();
+      for (int i = 0; i != insertColumnList.length; i++) {
+        if (!tableColumnList.contains(insertColumnList[i])) {
+          System.out.println("Insertion has failed: \u005c'" + insertColumnList[i] + "\u005c' does not exist");
+          return;
+        }
+        if (duplicateCheck.contains(insertColumnList[i])) {
+          System.out.println("Insertion has failed: Column name duplication");          //if column name is duplicated, return
+          return;
+        }
+        duplicateCheck.add(insertColumnList[i]);
+      }
+      if (tableColumnList.size() != insertColumnList.length) {
+        System.out.println("Insertion has failed: Types are not matched");
+        return;
+      }
+      ArrayList<String> correctOrder = new ArrayList<String>(Arrays.asList(valueList));
+      for (int i = 0; i != insertColumnList.length; i++) {
+        for (int j = 0; j != tableColumnList.size(); j++) {
+          if (insertColumnList[i].equals(tableColumnList.get(j))) {
+            valueList[j] = correctOrder.get(i);
+          }
+        }
+      }
+    }
+
+    for (int i = 0; i != valueList.length; i++) {
+      String[] metaDataList = tableColumnMetaDataList.get(i).split(",");
+      if (isNull(valueList[i])) {
+        if (metaDataList[1].equals("N")) {
+          System.out.println("Insertion has failed: \u005c'" + tableColumnList.get(i) + "\u005c' is not nullable");
+          return;
+        }
+      }
+      else {
+                  if (metaDataList[0].equals("int")) {
+                    if (!isInt(valueList[i])) {
+                      System.out.println("Insertion has failed: Types are not matched");
+                      return;
+                    }
+                  }
+                  else if (metaDataList[0].equals("date")) {
+                    if (!isDate(valueList[i])) {
+                      System.out.println("Insertion has failed: Types are not matched");
+                      return;
+                    }
+                  }
+                  else {
+                    if (!isCharString(valueList[i])) {
+                      System.out.println("Insertion has failed: Types are not matched");
+                      return;
+                    }
+                    int charStringLimit = Integer.parseInt(metaDataList[0].substring(5, metaDataList[0].length() - 1));
+                    if (valueList[i].length() - 2 > charStringLimit) {
+                      String truncatedValue = valueList[i].substring(1, valueList[i].length() - 1);
+                      truncatedValue = truncatedValue.substring(0, charStringLimit);
+                      valueList[i] = "\u005c'" + truncatedValue + "\u005c'";
+                    }
+                  }
+                  if (metaDataList[2].equals("P")) {
+                    primaryKeyValueList.add(valueList[i]);
+                  }
+                  if (metaDataList[3].equals("F")) {
+                    String[] referenceTo = metaDataList[5].split("/");
+                    String referenceTableName = referenceTo[0];
+                    String referenceColumnName = referenceTo[1];
+                    if (!referenceTableNameList.contains(referenceTableName)) {
+                      referenceTableNameList.add(referenceTableName);
+                      referenceTableList.put(referenceTableName, tableMaker(referenceTableName));
+                    }
+                    ArrayList<Integer> fkConstraint = tableValueFinder(referenceTableList.get(referenceTableName), referenceColumnName, valueList[i]);
+                    if (fkConstraint == null) {
+                      System.out.println("Insertion has failed: Referential integrity violation");
+                      return;
+                    }
+                  }
+          }
+    }
+
+    if (primaryKeyValueList.size() == 0) {
+      for (int i = 0; i != valueList.length; i++) {
+        primaryKeyValueList.add(valueList[i]);
+      }
+    }
+
+    String primaryKeyValueString = primaryKeyValueList.get(0);
+    for (int i = 1; i != primaryKeyValueList.size(); i++) {
+      primaryKeyValueString += "\u005c"" + primaryKeyValueList.get(i);
+    }
+
+    if (dbGet(tableName + "\u005c"\u005c"" + primaryKeyValueString) != null) {
+      System.out.println("Insertion has failed: Primary key duplication");
+      return;
+    }
+
+    String valueString = valueList[0];
+    for (int i = 1; i != valueList.length; i++) {
+      valueString += "\u005c"" + valueList[i];
+    }
+
+    recordInsert(tableName, primaryKeyValueString, valueString);
+    return;
+  }
+
   public static void deleteHandler(String query) {
     String[] whereClauseList = query.split("\u005c"\u005c"")[2].split("\u005c"");
     ArrayList<String> whereClausePostfixList = whereClauseToPostfix(whereClauseList);
     for (int i = 0; i != whereClausePostfixList.size(); i++) {
-      //System.out.print(whereClausePostfixList.get(i) + ",");
+      System.out.print(whereClausePostfixList.get(i) + "|");
     }
+    System.out.println(" ");
     //recordInsert("test__", "6\"'Perry'", "6\"'Perry'\"2017-02-12");
     //recordDelete("test__", "2\"'Jim'");
     ArrayList<ArrayList<String>> test = tableMaker("test");
@@ -514,6 +643,10 @@ public class SimpleDBMSParser implements SimpleDBMSParserConstants {
       }
       System.out.println(" ");
     }
+    /*ArrayList<Integer> test2 = tableValueFinder(test, "created_date", "2015-12-12");
+    System.out.println(test2.size());
+    System.out.println(test2.get(0));*/
+        System.out.println("'hello'".substring(1, 6));
   }
 
   private static boolean isBoolean(String operand) {
@@ -534,6 +667,7 @@ public class SimpleDBMSParser implements SimpleDBMSParserConstants {
   }
 
   private static boolean isNull(String operand) {
+    if (isCharString(operand)) return false;
     return operand.contains("null");
   }
 
@@ -619,6 +753,23 @@ public class SimpleDBMSParser implements SimpleDBMSParserConstants {
       pointer = recordNode[2];
     }
     return resultTable;
+  }
+
+  private static ArrayList<Integer> tableValueFinder(ArrayList<ArrayList<String>> table, String column, String value) {
+        if (table.size() == 2) return null;
+    ArrayList<Integer> resultList = new ArrayList<Integer>();
+    int columnIndex = 0;
+    for (int i = 0; i != table.get(0).size(); i++) {
+      if (table.get(0).get(i).equals(column)) columnIndex = i;
+    }
+    for (int i = 2; i != table.size(); i++) {
+      if (table.get(i).get(columnIndex).equals(value)) {
+        resultList.add(i);
+      }
+    }
+    if (resultList.size() == 0) return null;
+    resultList.add(columnIndex);
+    return resultList;
   }
 
   private static void recordInsert(String tableName, String primaryKey, String value) {
@@ -727,6 +878,9 @@ public class SimpleDBMSParser implements SimpleDBMSParserConstants {
         case PRINT_SHOW_TABLES:
           showTablesHandler();
           break;
+        case PRINT_INSERT:
+          System.out.println(q.substring(1, q.length()));
+          break;
         case PRINT_DELETE:
           System.out.println(q.substring(1, q.length()));
           System.out.println("a\u005c"b\u005c"'c'\u005c"\u005c"d".split("\u005c"\u005c"")[1]);
@@ -774,7 +928,7 @@ public class SimpleDBMSParser implements SimpleDBMSParserConstants {
               q = PRINT_SELECT;
       break;
     case INSERT_INTO:
-      insertQuery();
+      argument = insertQuery();
               q = PRINT_INSERT;
       break;
     case DELETE_FROM:
@@ -1351,28 +1505,41 @@ public class SimpleDBMSParser implements SimpleDBMSParserConstants {
     throw new Error("Missing return statement in function");
   }
 
-  static final public void insertQuery() throws ParseException {
+  static final public String insertQuery() throws ParseException {
+  String returnValue;
+  String temp;
     jj_consume_token(INSERT_INTO);
-    tableName();
-    insertColumnsAndSource();
+    returnValue = tableName();
+    temp = insertColumnsAndSource();
+    returnValue += "\u005c"\u005c"" + temp;
+    {if (true) return returnValue;}
+    throw new Error("Missing return statement in function");
   }
 
-  static final public void insertColumnsAndSource() throws ParseException {
+  static final public String insertColumnsAndSource() throws ParseException {
+  String returnValue = "";
+  String temp;
     switch ((jj_ntk==-1)?jj_ntk():jj_ntk) {
     case LEFT_PAREN:
-      columnNameList();
+      returnValue = columnNameList();
+      returnValue += "\u005c"\u005c"";
       break;
     default:
       jj_la1[27] = jj_gen;
       ;
     }
-    valueList();
+    temp = valueList();
+    {if (true) return returnValue + temp;}
+    throw new Error("Missing return statement in function");
   }
 
-  static final public void valueList() throws ParseException {
+  static final public String valueList() throws ParseException {
+  String returnValue = "values\u005c"\u005c"";
+  String temp;
     jj_consume_token(VALUES);
     jj_consume_token(LEFT_PAREN);
-    value();
+    temp = value();
+    returnValue += temp;
     label_8:
     while (true) {
       switch ((jj_ntk==-1)?jj_ntk():jj_ntk) {
@@ -1384,26 +1551,33 @@ public class SimpleDBMSParser implements SimpleDBMSParserConstants {
         break label_8;
       }
       jj_consume_token(COMMA);
-      value();
+      temp = value();
+      returnValue += "\u005c"" + temp;
     }
     jj_consume_token(RIGHT_PAREN);
+    {if (true) return returnValue;}
+    throw new Error("Missing return statement in function");
   }
 
-  static final public void value() throws ParseException {
+  static final public String value() throws ParseException {
+  String returnValue;
     switch ((jj_ntk==-1)?jj_ntk():jj_ntk) {
     case NULL:
       jj_consume_token(NULL);
+             {if (true) return "null";}
       break;
     case INT_VALUE:
     case DATE_VALUE:
     case CHAR_STRING:
-      comparableValue();
+      returnValue = comparableValue();
+  {if (true) return returnValue;}
       break;
     default:
       jj_la1[29] = jj_gen;
       jj_consume_token(-1);
       throw new ParseException();
     }
+    throw new Error("Missing return statement in function");
   }
 
   static final public String deleteQuery() throws ParseException {
