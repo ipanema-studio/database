@@ -32,6 +32,9 @@ public class SimpleDBMSParser implements SimpleDBMSParserConstants {
   public static final int PRINT_DELETE = 6;
   public static final int PRINT_SHOW_TABLES = 7;
 
+  public static final String[] COMP_OPERATOR = { "<", ">", "=", "<=", ">=", "!=", "is" };
+  public static final String[] OPERATOR = { "<", ">", "=", "<=", ">=", "!=", "is", "not", "and", "or", "(", ")" };
+
   public static void main(String args[]) throws ParseException
   {
     SimpleDBMSParser parser = new SimpleDBMSParser(System.in);
@@ -437,8 +440,8 @@ public class SimpleDBMSParser implements SimpleDBMSParserConstants {
       if (isPrimary && isForeign) result += "PRI/FOR";
       else if (isPrimary) result += "PRI";
       else if (isForeign) result += "FOR";
-      //System.out.println(result);
-      System.out.println(attributeList[i] + ": " + attributeMetaData);  //if you want to see the form of meta data, use this line.
+      System.out.println(result);
+      //System.out.println(attributeList[i] + ": " + attributeMetaData);	//if you want to see the form of meta data, use this line.
     }
 
     System.out.println("--------------------");
@@ -488,6 +491,99 @@ public class SimpleDBMSParser implements SimpleDBMSParserConstants {
     return;
   }
 
+  public static void deleteHandler(String query) {
+    String[] whereClauseList = query.split("\u005c"\u005c"")[2].split("\u005c"");
+    ArrayList<String> whereClausePostfixList = whereClauseToPostfix(whereClauseList);
+    for (int i = 0; i != whereClausePostfixList.size(); i++) {
+      System.out.print(whereClausePostfixList.get(i) + ",");
+    }
+  }
+
+  private static boolean isBoolean(String operand) {
+    return (operand.equals("_true_") || operand.equals("_false_"));
+  }
+
+  private static boolean isCharString(String operand) {
+    return operand.contains("'");
+  }
+
+  private static boolean isDate(String operand) {
+    return operand.contains("-");
+  }
+
+  private static boolean isInt(String operand) {
+    return Character.isDigit(operand.charAt(0));
+  }
+
+  private static boolean isNull(String operand) {
+    return operand.contains("null");
+  }
+
+  private static int operatorOrder(String operator) {
+    if (operator.equals("(") || operator.equals(")")) return 4;
+    if (operator.equals("not")) return 2;
+    if (operator.equals("and")) return 1;
+    if (operator.equals("or")) return 0;
+    return 3;
+  }
+
+  private static boolean isCompOperator(String operator) {
+    for (int i = 0; i != COMP_OPERATOR.length; i++) {
+      if (COMP_OPERATOR[i].equals(operator)) return true;
+    }
+    return false;
+  }
+
+  private static boolean isOperator(String operator) {
+    for (int i = 0; i != OPERATOR.length; i++) {
+      if (OPERATOR[i].equals(operator)) return true;
+    }
+    return false;
+  }
+
+  private static boolean isOperand(String operand) {
+    return !isOperator(operand);
+  }
+
+  private static boolean isColumn(String operand) {
+    if (isOperator(operand) || isBoolean(operand) || isCharString(operand) || isDate(operand) || isInt(operand) || isNull(operand)) return false;
+    return true;
+  }
+
+  private static ArrayList<String> whereClauseToPostfix(String[] whereList) {
+    ArrayList<String> result = new ArrayList<String>();
+    ArrayList<String> stack = new ArrayList<String>();
+    for (int i = 0; i != whereList.length; i++) {
+      String op = whereList[i];
+      if (isOperand(op)) result.add(op);
+      else {
+        if (stack.size() == 0 || stack.get(stack.size() - 1).equals("(")
+          || (!op.equals(")") && operatorOrder(stack.get(stack.size() - 1)) < operatorOrder(op))) stack.add(op);
+        else {
+          if (op.equals(")")) {
+            while (!stack.get(stack.size() - 1).equals("(")) {
+              result.add(stack.get(stack.size() - 1));
+              stack.remove(stack.size() - 1);
+            }
+            stack.remove(stack.size() - 1);
+          }
+          else {
+            while (stack.size() > 0 && !stack.get(stack.size() - 1).equals("(") && operatorOrder(stack.get(stack.size() - 1)) >= operatorOrder(op)) {
+              result.add(stack.get(stack.size() - 1));
+              stack.remove(stack.size() - 1);
+            }
+            stack.add(op);
+          }
+        }
+      }
+    }
+    while (stack.size() > 0) {
+      result.add(stack.get(stack.size() - 1));
+      stack.remove(stack.size() - 1);
+    }
+    return result;
+  }
+
   static final public void command() throws ParseException {
     switch ((jj_ntk==-1)?jj_ntk():jj_ntk) {
     case CREATE_TABLE:
@@ -535,6 +631,9 @@ public class SimpleDBMSParser implements SimpleDBMSParserConstants {
         case PRINT_DELETE:
           System.out.println(q.substring(1, q.length()));
           System.out.println("a\u005c"b\u005c"'c'\u005c"\u005c"d".split("\u005c"\u005c"")[1]);
+          System.out.println("abc".contains("bc"));
+          System.out.println(Character.isDigit("123".charAt(0)));
+          deleteHandler(q.substring(1, q.length()));
           break;
       }
       System.out.print("DB_2015-16535> ");
@@ -910,7 +1009,7 @@ public class SimpleDBMSParser implements SimpleDBMSParserConstants {
   String returnValue;
     jj_consume_token(WHERE);
     returnValue = booleanValueExpression();
-    {if (true) return "where\u005c"" + returnValue;}
+    {if (true) return "where\u005c"\u005c"" + returnValue;}
     throw new Error("Missing return statement in function");
   }
 
@@ -1038,7 +1137,7 @@ public class SimpleDBMSParser implements SimpleDBMSParserConstants {
       break;
     case CHAR_STRING:
       t = jj_consume_token(CHAR_STRING);
-                        {if (true) return t.toString();}
+                        {if (true) return t.toString().toLowerCase();}
       break;
     case DATE_VALUE:
       t = jj_consume_token(DATE_VALUE);
