@@ -1,0 +1,1149 @@
+options
+{
+  static = true;
+  DEBUG_PARSER = false;
+  IGNORE_CASE = true;
+}
+
+PARSER_BEGIN(SimpleDBMSParser)
+
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashMap;
+
+import java.io.File;
+import java.io.UnsupportedEncodingException;
+
+import com.sleepycat.je.Database;
+import com.sleepycat.je.DatabaseException;
+import com.sleepycat.je.DatabaseConfig;
+import com.sleepycat.je.Cursor;
+import com.sleepycat.je.DatabaseEntry;
+import com.sleepycat.je.LockMode;
+import com.sleepycat.je.OperationStatus;
+
+import com.sleepycat.je.Environment;
+import com.sleepycat.je.EnvironmentConfig;
+
+public class SimpleDBMSParser
+{
+  public static Environment myDbEnvironment = null;
+  public static Database myDatabase = null;
+  public static EnvironmentConfig envConfig = new EnvironmentConfig();
+  public static DatabaseConfig dbConfig = new DatabaseConfig();
+  
+  public static final int PRINT_SYNTAX_ERROR = 0;		//constants indicating valid queries
+  public static final int PRINT_CREATE_TABLE = 1;
+  public static final int PRINT_DROP_TABLE = 2;
+  public static final int PRINT_DESC = 3;
+  public static final int PRINT_SELECT = 4;
+  public static final int PRINT_INSERT = 5;
+  public static final int PRINT_DELETE = 6;
+  public static final int PRINT_SHOW_TABLES = 7;
+  
+  public static void main(String args[]) throws ParseException
+  {
+    SimpleDBMSParser parser = new SimpleDBMSParser(System.in);
+    System.out.print("DB_2015-16535> ");		//prompt
+
+	envConfig.setAllowCreate(true);
+    myDbEnvironment = new Environment(new File("db/"), envConfig);
+    dbConfig.setAllowCreate(true);
+    dbConfig.setSortedDuplicates(true);
+    myDatabase = myDbEnvironment.openDatabase(null, "sampleDatabase", dbConfig);
+
+    while (true)
+    {
+      try
+      {
+        parser.command();
+      }
+      catch (Exception e)
+      {
+        printMessage(PRINT_SYNTAX_ERROR);
+        SimpleDBMSParser.ReInit(System.in);
+      }
+    }
+  }
+
+  public static void printMessage(int q)		//note: the program will use PRINT_SYNTAX_ERROR part only. other print messages will be printed in functions.
+  {
+    switch(q)
+    {
+      case PRINT_SYNTAX_ERROR:
+      	System.out.println("Syntax error");
+      	break;
+      case PRINT_CREATE_TABLE:
+      	System.out.println("\'CREATE TABLE\' requested");
+      	break;
+      case PRINT_DROP_TABLE:
+      	System.out.println("\'DROP TABLE\' requested");
+      	break;
+      case PRINT_DESC:
+      	System.out.println("\'DESC\' requested");
+      	break;
+      case PRINT_SELECT:
+      	System.out.println("\'SELECT\' requested");
+      	break;
+      case PRINT_INSERT:
+      	System.out.println("\'INSERT\' requested");
+      	break;
+      case PRINT_DELETE:
+      	System.out.println("\'DELETE\' requested");
+      	break;
+      case PRINT_SHOW_TABLES:
+      	System.out.println("\'SHOW TABLES\' requested");
+      	break;
+    }
+    System.out.print("DB_2015-16535> ");
+  }
+
+  public static void dbClose() {			//function for closing database when the program is terminated.
+    if (myDatabase != null) myDatabase.close();
+    if (myDbEnvironment != null) myDbEnvironment.close();
+  }
+
+  public static void dbPut(String keyString, String dataString) {			//function for saving new key-value pair.
+    Cursor cursor = null;
+    DatabaseEntry key;
+    DatabaseEntry data;
+
+    try {
+      cursor = myDatabase.openCursor(null, null);
+      key = new DatabaseEntry(keyString.getBytes("UTF-8"));
+      data = new DatabaseEntry(dataString.getBytes("UTF-8"));
+      cursor.put(key, data);
+      cursor.close();
+    }
+    catch (DatabaseException de) {
+      cursor.close();
+    }
+    catch (UnsupportedEncodingException e) {
+      cursor.close();
+      e.printStackTrace();
+    }
+  }
+
+  public static String dbGet(String query) {		//function for finding value.
+    Cursor cursor = myDatabase.openCursor(null, null);
+    DatabaseEntry foundKey = new DatabaseEntry();
+    DatabaseEntry foundData = new DatabaseEntry();
+
+    if (cursor.getFirst(foundKey, foundData, LockMode.DEFAULT) != OperationStatus.SUCCESS) {	//if database is empty,
+      cursor.close();
+      return null;																				//return null.
+    }
+
+	try { 
+	    do {
+	      String keyString = new String(foundKey.getData(), "UTF-8");
+	      String dataString = new String(foundData.getData(), "UTF-8");
+	
+	      if (keyString.equals(query)) {		//if query is found,
+			cursor.close();
+	        return dataString;					//return the value.
+	      }
+	    }
+	    while (cursor.getNext(foundKey, foundData, LockMode.DEFAULT) == OperationStatus.SUCCESS);
+  	}
+  	catch (UnsupportedEncodingException e) {
+  	  cursor.close();
+  	  e.printStackTrace();
+  	}
+
+  	cursor.close();			//if nothing,
+    return null;			//return null.
+  }
+
+  public static void dbDelete(String query) {		//function for deleting key-value pair.
+    Cursor cursor = myDatabase.openCursor(null, null);
+    DatabaseEntry foundKey = new DatabaseEntry();
+    DatabaseEntry foundData = new DatabaseEntry();
+
+    if (cursor.getFirst(foundKey, foundData, LockMode.DEFAULT) != OperationStatus.SUCCESS) {	//if database is empty just return.
+      cursor.close();
+      return;
+    }
+
+	try { 
+	    do {
+	      String keyString = new String(foundKey.getData(), "UTF-8");
+	      String dataString = new String(foundData.getData(), "UTF-8");
+	
+	      if (keyString.equals(query)) {		//if query is found,
+	        cursor.delete();					//delete.
+			cursor.close();
+	        return;
+	      }
+	    }
+	    while (cursor.getNext(foundKey, foundData, LockMode.DEFAULT) == OperationStatus.SUCCESS);
+  	}
+  	catch (UnsupportedEncodingException e) {
+  	  cursor.close();
+  	  e.printStackTrace();
+  	}
+
+  	cursor.close();
+    return;
+  }
+
+  public static void createTableHandler(String query)		//function for "create table" query. argument form is explained in document.
+  {
+	String tableName = "_";									//these are the elements for creating new table.
+	ArrayList<String> attributeList = new ArrayList<String>();
+	HashMap<String, String> attributeMetaData = new HashMap<String, String>();
+
+	ArrayList<String> referenceTableAttributeList = new ArrayList<String>();	//these are the elements for updating referenced table.
+	HashMap<String, String> referenceTableAttributeMetaData = new HashMap<String, String>();
+
+	int primaryKeyDefCount = 0;
+    String[] querySlice = query.split("/");
+
+    for (int i = 0; i != querySlice.length; i++) {
+	  if (i == 0) {
+		tableName = querySlice[0];
+		if (dbGet(tableName) != null) {		//if table name already exists, return.
+		  System.out.println("Create table has failed: table with the same name already exists");
+		  return;
+		}
+	  }
+	  else {
+		String[] tableElement = querySlice[i].split(",");
+		if (!tableElement[0].equals("primary") && !tableElement[0].equals("foreign")) {		//column definition.
+		  if (attributeList.contains(tableElement[0])) {									//if column name is already used, return.
+			System.out.println("Create table has failed: column definition is duplicated");
+			return;
+		  }
+		  else {
+			attributeList.add(tableElement[0]);
+			String temp = tableElement[1];
+			if (!temp.equals("int") && !temp.equals("date")) {								//when it is char type.
+			  String charTest = temp.split("char")[1];
+			  if (Integer.parseInt(charTest.substring(1, charTest.length() - 1)) <= 0) {	//if char length is less than 0, return.
+			    System.out.println("Char length should be over 0");
+			    return;
+			  }
+			}
+			if (tableElement.length == 3) {
+			  temp += ",N,NP,NF,NR,RT,RB"; 		//nullable, isPrimaryKey, isForeignKey, isReferenced, refersTo, referedBy
+			}
+			else {
+			  temp += ",Y,NP,NF,NR,RT,RB";
+			}
+			attributeMetaData.put(tableElement[0], temp);
+		  }
+		}
+		else if (tableElement[0].equals("primary")) {		//primary key constraint.
+		  primaryKeyDefCount++;
+		  if (primaryKeyDefCount == 2) {					//when defined more than once, return.
+			System.out.println("Create table has failed: primary key definition is duplicated");
+			return;
+		  }
+		  for (int j = 1; j != tableElement.length; j++) {
+			if (!attributeList.contains(tableElement[j])) {		//when there is undefined column, return.
+			  System.out.println("Create table has failed: \'" + tableElement[j] + "\' does not exist in column definition");
+			  return;
+			}
+			else {
+			  String oldMeta = attributeMetaData.get(tableElement[j]);
+			  String[] oldMetaList = oldMeta.split(",");
+			  String newMeta = oldMetaList[0] + ",N,P," + oldMetaList[3] + "," + oldMetaList[4] + "," + oldMetaList[5] + "," + oldMetaList[6];
+			  attributeMetaData.put(tableElement[j], newMeta);	//update meta data.
+			}
+		  }
+		}
+		else {			//foreign key constraint.
+		  String referenceTableName = "_";
+		  ArrayList<String> referenceList = new ArrayList<String>();
+		  HashMap<String, String> referenceMetaData = new HashMap<String, String>();
+		  ArrayList<String> foreignKeyList = new ArrayList<String>();
+		  boolean references = false;
+		  for (int j = 1; j != tableElement.length; j++) {
+			if (tableElement[j].equals("references")) {		//when the program meets "references" keyword
+			  references = true;
+			  referenceTableName = tableElement[j + 1];
+			  if (dbGet(referenceTableName) == null) {		//if reference table does not exist, return.
+			    System.out.println("Create table has failed: foreign key references non existing table");
+			    return;
+			  }
+			  j++;
+			}
+			else if (!references) {				//before "references" keyword
+			  if (!attributeList.contains(tableElement[j])) {		//when there is undefined column, return.
+			    System.out.println("Create table has failed: \'" + tableElement[j] + "\' does not exist in column definition");
+			    return;
+			  }
+			  else {
+			    foreignKeyList.add(tableElement[j]);
+			  }
+			}
+			else {		//after "references" keyword
+			  String testQuery = referenceTableName + "/" + tableElement[j];
+			  String testResult = dbGet(testQuery);
+			  if (testResult == null) {			//if reference table column does not exist, return.
+			    System.out.println("Create table has failed: foreign key references non existing column");
+			    return;
+			  }
+			  String[] testResultSlice = testResult.split(",");
+			  if (testResultSlice[2].equals("NP")) {		//if reference column is not a primary key, return.
+			    System.out.println("Create table has failed: foreign key references non primary key column");
+			    return;
+			  }
+			  referenceList.add(tableElement[j]);
+			  if (referenceTableAttributeList.contains(testQuery)) testResult = referenceTableAttributeMetaData.get(testQuery);		//when there is multiple foreign key constraint with same reference table column, the program must use modified meta data. 
+			  referenceMetaData.put(tableElement[j], testResult);
+			}
+		  }
+		  if (foreignKeyList.size() != referenceList.size()) {		//if the number of column is different, return.
+		    System.out.println("Create table has failed: foreign key references wrong type");
+		    return;
+		  }
+		  for (int j = 0; j != foreignKeyList.size(); j++) {
+		    String oldMeta = attributeMetaData.get(foreignKeyList.get(j));
+		    String[] oldMetaList = oldMeta.split(",");
+		    String refMeta = referenceMetaData.get(referenceList.get(j));
+		    String[] refMetaList = refMeta.split(",");
+		    if (!oldMetaList[0].equals(refMetaList[0])) {			//if the column type is different, return.
+		      System.out.println("Create table has failed: foreign key references wrong type");
+		      return;
+		    }
+		    if (oldMetaList[3].equals("NF")) { 
+		      String newMeta = oldMetaList[0] + "," + oldMetaList[1] + "," +
+		        oldMetaList[2] + ",F," + oldMetaList[4] + "," +
+		        referenceTableName + "/" + referenceList.get(j) + "," +
+		        oldMetaList[6];
+		      attributeMetaData.put(foreignKeyList.get(j), newMeta);
+		      String referedBy = refMetaList[6];
+		      if (referedBy.equals("RB")) {
+		        referedBy = tableName + "/" + foreignKeyList.get(j);
+		      }
+		      else {	//if referenced column is already referenced by other table columns, append it.
+		        referedBy += "+" + tableName + "/" + foreignKeyList.get(j);
+		      }
+		      String newRefMeta = refMetaList[0] + "," + refMetaList[1] + "," +
+		        refMetaList[2] + "," + refMetaList[3] + ",R," +
+		        refMetaList[5] + "," + referedBy;
+		      referenceMetaData.put(referenceList.get(j), newRefMeta);
+		    }
+		    else {																					//if the column is already a foreign key,
+		      String[] temp = oldMetaList[5].split("/");
+		      if (!temp[0].equals(referenceTableName) || !temp[1].equals(referenceList.get(j))) {	//if constraint is different, return
+		        System.out.println("Create table has failed: column constraint is duplicated");
+				return;
+		      }
+		    }
+		  }
+		  for (int j = 0; j != referenceList.size(); j++) {		//save the referenced column data to prepare actual database update.
+		    String referenceTableAttribute = referenceTableName + "/" + referenceList.get(j);
+		    if (!referenceTableAttributeList.contains(referenceTableAttribute)) referenceTableAttributeList.add(referenceTableAttribute);
+		    referenceTableAttributeMetaData.put(referenceTableAttribute, referenceMetaData.get(referenceList.get(j)));
+		  }
+		}
+	  }
+    }
+    
+	String attributeListString = attributeList.get(0);		//when code reaches this part, it can assure that all input date is correct. so, update database.
+	for (int i = 1; i != attributeList.size(); i++) {
+	  attributeListString += "," + attributeList.get(i);
+	}
+	dbPut(tableName, attributeListString);
+	
+	for (int i = 0; i != attributeList.size(); i++) {
+	  String temp = attributeList.get(i);
+	  dbPut(tableName + "/" + temp, attributeMetaData.get(temp));
+	}
+
+	if (referenceTableAttributeList.size() != 0) {
+	  for (int i = 0; i != referenceTableAttributeList.size(); i++) {
+	    String temp = referenceTableAttributeList.get(i);
+	    dbDelete(temp);
+	    dbPut(temp, referenceTableAttributeMetaData.get(temp));
+	  }
+	}
+
+	System.out.println("\'" + tableName + "\' table is created");	//success!
+  }
+
+  public static void dropTableHandler(String query)		//function for "drop table" query.
+  {
+    String attributes = dbGet(query);
+
+    if (attributes == null) {					//if query does not exist in database, return.
+      System.out.println("No such table");
+      return;
+    }
+
+    String[] attributeList = attributes.split(",");
+
+    for (int i = 0; i != attributeList.length; i++) {					//this 'for' loop checks whether the table is referenced or not.
+      String attributeMetaData = dbGet(query + "/" + attributeList[i]);
+      String[] attributeMetaDataList = attributeMetaData.split(",");
+      if (attributeMetaDataList[4].equals("R")) {						//if referenced, return.
+        System.out.println("Drop table has failed: \'" + query + "\' is referenced by other table");
+        return;
+      }
+    }
+
+    for (int i = 0; i != attributeList.length; i++) {
+      String attributeMetaData = dbGet(query + "/" + attributeList[i]);
+      String[] attributeMetaDataList = attributeMetaData.split(",");
+      if (attributeMetaDataList[3].equals("F")) {	//this 'if' block updates tables that are referenced by the table to be deleted.
+        String fk = attributeMetaDataList[5];
+        String fkMetaData = dbGet(fk);
+        String[] fkMetaDataList = fkMetaData.split(",");
+        if (fkMetaDataList[6].indexOf('+') == -1) {	
+          String newfkMetaData = fkMetaDataList[0] + "," + fkMetaDataList[1] + "," +
+            fkMetaDataList[2] + "," + fkMetaDataList[3] + ",NR," +
+            fkMetaDataList[5] + ",RB";
+          dbDelete(fk);
+          dbPut(fk, newfkMetaData);
+        }
+        else { 
+          String[] referedByList = fkMetaDataList[6].split("\\+");
+          String referedBy = "";
+          for (int j = 0; j != referedByList.length; j++) {
+            if (!referedByList[j].equals(query + "/" + attributeList[i])) {
+              referedBy += referedByList[j] + "+";
+            }
+          }
+          referedBy = referedBy.substring(0, referedBy.length() - 1);
+          String newfkMetaData = fkMetaDataList[0] + "," + fkMetaDataList[1] + "," +
+            fkMetaDataList[2] + "," + fkMetaDataList[3] + "," +
+            fkMetaDataList[4] + "," + fkMetaDataList[5] + "," + referedBy;
+          dbDelete(fk);
+          dbPut(fk, newfkMetaData);
+        }
+      }
+      dbDelete(query + "/" + attributeList[i]);		//delete column of table.
+    }
+
+    dbDelete(query);		//delete table.
+
+    System.out.println("\'" + query + "\' table is dropped");		//success!
+  }
+
+  public static void descHandler(String query)		//function for "desc" query.
+  {
+    String attributes = dbGet(query);
+    
+    if (attributes == null) {			//if query does not exist in database, return.
+      System.out.println("No such table");
+      return;
+    }
+
+	System.out.println("--------------------");
+    System.out.println("table_name [" + query + "]");
+    System.out.println("column_name\t\ttype\t\tnull\t\tkey");
+    
+    String[] attributeList = attributes.split(",");
+
+    for (int i = 0; i != attributeList.length; i++) {
+      String attributeMetaData = dbGet(query + "/" + attributeList[i]);
+      String[] attributeMetaDataList = attributeMetaData.split(",");
+      String result = attributeList[i] + "\t\t" + attributeMetaDataList[0] + "\t\t" + attributeMetaDataList[1] + "\t\t";
+      boolean isPrimary = attributeMetaDataList[2].equals("P");
+      boolean isForeign = attributeMetaDataList[3].equals("F");
+      if (isPrimary && isForeign) result += "PRI/FOR";
+      else if (isPrimary) result += "PRI";
+      else if (isForeign) result += "FOR";
+      //System.out.println(result);
+      System.out.println(attributeList[i] + ": " + attributeMetaData);	//if you want to see the form of meta data, use this line.
+    }
+
+    System.out.println("--------------------");
+  }
+
+  public static void showTablesHandler() {		//function for "show tables" query.
+    Cursor cursor = myDatabase.openCursor(null, null);
+    DatabaseEntry foundKey = new DatabaseEntry();
+    DatabaseEntry foundData = new DatabaseEntry();
+
+    ArrayList<String> tableList = new ArrayList<String>();
+
+    if (cursor.getFirst(foundKey, foundData, LockMode.DEFAULT) != OperationStatus.SUCCESS) {	//when database is empty, return.
+	  System.out.println("There is no table");
+      cursor.close();
+      return;
+    }
+
+	try { 
+	    do {
+	      String keyString = new String(foundKey.getData(), "UTF-8");
+	      String dataString = new String(foundData.getData(), "UTF-8");
+	
+	      if (keyString.indexOf("/") == -1) {		//key for table name does not contain "/".
+	        tableList.add(keyString);
+	      }
+	    }
+	    while (cursor.getNext(foundKey, foundData, LockMode.DEFAULT) == OperationStatus.SUCCESS);
+  	}
+  	catch (UnsupportedEncodingException e) {
+  	  cursor.close();
+  	  e.printStackTrace();
+  	}
+
+	if (tableList.size() == 0) {		//if there is no table, just return.
+	  System.out.println("There is no table");
+	}
+	else {
+	  System.out.println("--------------------");
+	  for (int i = 0; i != tableList.size(); i++) {
+	    System.out.println(tableList.get(i));
+	  }
+	  System.out.println("--------------------");
+	}
+	
+  	cursor.close();
+    return;
+  }
+}
+
+PARSER_END(SimpleDBMSParser)
+
+SKIP : { " " | "\r" | "\t" | "\n" | "\r\n" }	//skip space, tab and newline
+
+TOKEN : /* Keywords */
+{
+  < EXIT : "exit" >
+| < INT : "int" >
+| < CHAR : "char" >
+| < DATE : "date" >
+| < CREATE_TABLE : "create table" >
+| < NOT_NULL : "not null" >
+| < PRIMARY_KEY : "primary key" >
+| < FOREIGN_KEY : "foreign key" >
+| < REFERENCES : "references" >
+| < DROP_TABLE : "drop table" >
+| < DESC : "desc" >
+| < SHOW_TABLES : "show tables" >
+| < SELECT : "select" >
+| < AS : "as" >
+| < FROM : "from" >
+| < WHERE : "where" >
+| < IS : "is" >
+| < NULL : "null" >
+| < AND : "and" >
+| < OR : "or" >
+| < NOT : "not" >
+| < INSERT_INTO : "insert into" >
+| < VALUES : "values" >
+| < DELETE_FROM : "delete from" >		//keywords above are actually used
+| < CREATE : "create" >					//(prevent reserved words from being used as legal identifier)
+| < TABLE : "table" >
+| < PRIMARY : "primary" >
+| < FOREIGN : "foreign" >
+| < KEY : "key" >
+| < DROP : "drop" >
+| < SHOW : "show" >
+| < TABLES : "tables" >
+| < INSERT : "insert" >
+| < INTO : "into" >
+| < DELETE : "delete" >
+}
+
+TOKEN :
+{
+  < SEMICOLON : ";" >
+| < LEFT_PAREN : "(" >
+| < RIGHT_PAREN : ")" >
+| < COMMA : "," >
+| < UNDERSCORE : "_" >
+| < INT_VALUE : (< SIGN >)? (< DIGIT >)+>
+| < SIGN : "+" | "-" >
+| < DIGIT : [ "0"-"9" ] >
+| < LEGAL_IDENTIFIER : < ALPHABET > (< ALPHABET > | < UNDERSCORE >)* >
+| < ALPHABET : [ "a"-"z", "A"-"Z" ] >
+| < QUOTE : "\'" >
+| < ASTERISK : "*" >
+| < PERIOD : "." >
+| < COMP_OP : "<" | ">" | "=" | "<=" | ">=" | "!=" >
+| < NNNN : (< DIGIT >) { 4 } >
+| < NN : (< DIGIT >) { 2 } >
+| < DATE_VALUE : < NNNN >"-"< NN >"-"< NN > >
+| < NON_QUOTE_SPECIAL_CHARACTERS : ~[ "\'", "\"", "a"-"z", "A"-"Z", "0"-"9" ] >
+| < NON_QUOTE_CHARACTER : < DIGIT > | < ALPHABET > | < NON_QUOTE_SPECIAL_CHARACTERS > | " " >
+| < CHAR_STRING : < QUOTE > (< NON_QUOTE_CHARACTER >)* < QUOTE > > 
+}
+
+void command() :		//regex start
+{}
+{
+  queryList()			//query list or exit command
+| (
+    < EXIT >
+    < SEMICOLON >
+    {
+      dbClose();
+      System.exit(0);
+    }
+  ) 
+}
+
+void queryList() :		//query list consists of queries ended with semicolon
+{
+  String q;
+}
+{
+  (
+    q = query()
+    < SEMICOLON >
+    {
+      //printMessage(q);	//as mentioned above, printMessage function is used for exception part only.
+      switch(Character.getNumericValue(q.charAt(0))) {
+        case PRINT_CREATE_TABLE:
+          createTableHandler(q.substring(1, q.length()));
+          break;
+        case PRINT_DROP_TABLE:
+          dropTableHandler(q.substring(1, q.length()));
+          break;
+        case PRINT_DESC:
+          descHandler(q.substring(1, q.length()));
+          break;
+        case PRINT_SHOW_TABLES:
+          showTablesHandler();
+          break;
+        case PRINT_DELETE:
+          System.out.println(q.substring(1, q.length()));
+          System.out.println("a\"b\"'c'\"\"d".split("\"\"")[1]);
+          break;
+      }
+      System.out.print("DB_2015-16535> ");
+    }
+  )+
+}
+
+String query() :
+{
+  int q;					//integer for printMessage function
+  String argument = "";		//argument for query handlers
+}
+{
+  (
+	  (
+	    argument = createTableQuery()
+	    {
+	      q = PRINT_CREATE_TABLE;
+	    }
+	  )
+	| (
+	    argument = dropTableQuery()
+	    {
+	      q = PRINT_DROP_TABLE;
+	    }
+	  )
+	| (
+	    argument = descQuery()
+	    {
+	      q = PRINT_DESC;
+	    }
+	  )
+	| (
+	    selectQuery()
+	    {
+	      q = PRINT_SELECT;
+	    }
+	  )
+	| (
+	    insertQuery()
+	    {
+	      q = PRINT_INSERT;
+	    }
+	  )
+	| (
+	    argument = deleteQuery()
+	    {
+	      q = PRINT_DELETE;
+	    }
+	  )
+	| (
+	    showTablesQuery()
+	    {
+	      q = PRINT_SHOW_TABLES;
+	    }
+	  )
+  )
+  (
+    {
+      argument = String.valueOf(q) + argument;
+      return argument;
+    }
+  )
+}
+
+String createTableQuery() :	//"create table" query
+{
+  String returnValue;
+  String temp;
+}
+{
+  < CREATE_TABLE >
+  returnValue = tableName()
+  temp = tableElementList() {
+    returnValue += "/" + temp;
+    //System.out.println(returnValue);		//if you want to see the argument form for create table, use this line.
+    return returnValue;
+  }
+}
+
+String tableElementList() :
+{
+  String returnValue;
+  String temp;
+}
+{
+  < LEFT_PAREN >
+  returnValue = tableElement()
+  (
+    < COMMA >
+    temp = tableElement() {
+      returnValue += "/" + temp;
+    }
+  )*
+  < RIGHT_PAREN >
+  { return returnValue; }
+}
+
+String tableElement() :
+{
+  String s;
+}
+{
+  s = columnDefinition() { return s; }
+| s = tableConstraintDefinition() { return s; }
+}
+
+String columnDefinition() :
+{
+  String returnValue;
+  String temp;
+}
+{
+  returnValue = columnName()
+  temp = dataType() {
+    returnValue += "," + temp;
+  }
+  (
+    < NOT_NULL > {
+      returnValue += ",notnull";
+    }
+  )?
+  { return returnValue; }
+}
+
+String tableConstraintDefinition() :
+{
+  String s;
+}
+{
+  s = primaryKeyConstraint() { return s; }
+| s = referentialConstraint() { return s; }
+}
+
+String primaryKeyConstraint() :
+{
+  String returnValue;
+  String temp;
+}
+{
+  < PRIMARY_KEY > { returnValue = "primary"; }
+  temp = columnNameList() {
+    returnValue += "," + temp;
+    return returnValue;
+  }
+}
+
+String referentialConstraint() :
+{
+  String returnValue;
+  String temp;
+}
+{
+  < FOREIGN_KEY > { returnValue = "foreign"; }
+  temp = columnNameList() {
+    returnValue += "," + temp;
+  }
+  < REFERENCES > { returnValue += ",references"; }
+  temp = tableName() {
+    returnValue += "," + temp;
+  }
+  temp = columnNameList() {
+    returnValue += "," + temp;
+    return returnValue;
+  }
+}
+
+String columnNameList() :
+{
+  String s;
+  String temp;
+}
+{
+  < LEFT_PAREN >
+  s = columnName()
+  (
+    < COMMA >
+    temp = columnName() {
+	  s += "," + temp;
+    }
+  )*
+  < RIGHT_PAREN > {
+	return s;
+  }
+}
+
+String dataType() :
+{
+  Token t;
+}
+{
+  < INT > { return "int"; }
+| (
+    < CHAR >
+    < LEFT_PAREN >
+    t = < INT_VALUE >		//there has to be a number
+    < RIGHT_PAREN > {
+      return "char(" + t.toString() + ")";
+    }
+  )
+| < DATE > { return "date"; }
+}
+
+String tableName() :
+{
+  Token t;
+}
+{
+  t = < LEGAL_IDENTIFIER > {
+    return t.toString().toLowerCase();
+  }
+}
+
+String columnName() :
+{
+  Token t;
+}
+{
+  t = < LEGAL_IDENTIFIER > {
+	return t.toString().toLowerCase();
+  }
+}
+
+String dropTableQuery() :		//"drop table" query
+{
+  String s;
+}
+{
+  < DROP_TABLE >
+  s = tableName() {
+    return s;
+  }
+}
+
+String descQuery() :			//"desc" query
+{
+  String returnValue;
+}
+{
+  < DESC >
+  returnValue = tableName() {
+    return returnValue;
+  }
+}
+
+void showTablesQuery() :	//"show tables" query
+{}
+{
+  < SHOW_TABLES >
+}
+
+void selectQuery() :		//"select" query
+{}
+{
+  < SELECT >
+  selectList()
+  tableExpression()
+}
+
+void selectList() :
+{}
+{
+  < ASTERISK >
+| (
+    selectedColumn()
+    (      < COMMA >
+      selectedColumn()
+    )*
+  )
+}
+
+void selectedColumn() :
+{}
+{
+  columnName()				//a little trick for choice conflict.
+  (							//column name and table name are basically the same (LEGAL_IDENTIFIER).
+    < PERIOD >				//there must occur choice conflict if regex is [(tableName.)?columnName]
+    tableName()				//changing positions solves it.
+  )?
+  (    < AS >					//rename
+    columnName()
+  )?
+}
+
+void tableExpression() :
+{}
+{
+  fromClause()
+  (    whereClause()
+  )?
+}
+
+void fromClause() :
+{}
+{
+  < FROM >
+  tableReferenceList()
+}
+
+void tableReferenceList() :
+{}
+{
+  referedTable()
+  (    < COMMA >
+    referedTable()
+  )*
+}
+
+void referedTable() :
+{}
+{
+  tableName()
+  (    < AS >
+    tableName()
+  )?
+}
+
+String whereClause() :
+{
+  String returnValue;
+}
+{
+  < WHERE >
+  returnValue = booleanValueExpression() {
+    return "where\"" + returnValue;
+  }
+}
+
+String booleanValueExpression() :
+{
+  String returnValue;
+  String temp;
+}
+{
+  returnValue = booleanTerm()
+  (    < OR >
+    temp = booleanTerm() {
+      returnValue += "\"or\"" + temp;
+    }
+  )*
+  {
+    return returnValue;
+  }
+}
+
+String booleanTerm() :
+{
+  String returnValue;
+  String temp;
+}
+{
+  returnValue = booleanFactor()
+  (    < AND >
+    temp = booleanFactor() {
+      returnValue += "\"and\"" + temp;
+    }
+  )*
+  {
+    return returnValue;
+  }
+}
+
+String booleanFactor() :
+{
+  String returnValue;
+  boolean isNot = false;
+}
+{
+  (    < NOT >
+    { isNot = true; }
+  )?
+  returnValue = booleanTest() {
+    if (isNot) return "not\"" + returnValue;
+    else return returnValue;
+  }
+}
+
+String booleanTest() :
+{
+  String returnValue;
+}
+{
+  returnValue = predicate() { return returnValue; }
+| returnValue = parenthesizedBooleanExpression() { return returnValue; }
+}
+
+String parenthesizedBooleanExpression() :
+{
+  String returnValue;
+}
+{
+  < LEFT_PAREN >
+  returnValue = booleanValueExpression()
+  < RIGHT_PAREN >
+  {
+    return "(\"" + returnValue + "\")";
+  }
+}
+
+String predicate() :
+{
+  String returnValue;
+}																		//here is another trick.
+{																		//if <PREDICATE> consists of <COMPARISON PREDICATE> and <NULL PREDICATE>
+  returnValue = leftValuePredicate() { return returnValue; }			//there will be choice conflict because
+| returnValue = leftNonValuePredicate() { return returnValue; }			//they share <TABLE NAME> <PERIOD> <COLUMN NAME> consequence.
+}
+
+String comparableValue() :
+{
+  Token t;
+}
+{
+  t = < INT_VALUE > { return t.toString(); }
+| t = < CHAR_STRING > { return t.toString(); }
+| t = < DATE_VALUE > { return t.toString(); }
+}
+
+String leftValuePredicate() :
+{
+  String compVal;
+  Token compOp;
+  String rightOp;
+}
+{
+  compVal = comparableValue()
+  compOp = < COMP_OP >
+  rightOp = rightOperand()
+  {
+    return compVal + "\"" + compOp.toString() + "\"" + rightOp;
+  }
+}
+
+String rightOperand() :
+{
+  String returnVal;
+  String temp;
+}
+{
+  returnVal = comparableValue() { return returnVal; }
+| (
+    returnVal = columnName()
+    (      < PERIOD >
+      temp = tableName() {
+        returnVal += "." + temp;
+      }
+    )?
+  )
+  {
+    return returnVal;
+  }
+}
+
+String leftNonValuePredicate() :
+{
+  String leftOp;
+  String temp;
+  Token compOp;
+  String rightOp;
+}
+{
+  (
+    leftOp = columnName()
+    (
+      < PERIOD >
+      temp = tableName() {
+        leftOp += "." + temp;
+      }
+    )?
+  )
+  (    (      compOp = < COMP_OP >
+      rightOp = rightOperand()
+      { return leftOp + "\"" + compOp.toString() + "\"" + rightOp; }
+    )
+  | rightOp = nullOperation() {
+    return leftOp + "\"" + rightOp;
+  }				//if left operand is non-value then there can be null operation
+  )
+}
+
+String nullOperation() :
+{}
+{
+  < IS >
+  (    < NULL > { return "is\"null"; }					//since there are <NOT NULL>, <NOT> and <NULL>
+  | < NOT_NULL > { return "is\"notnull"; }
+  | < NOT >
+    < NULL > { return "is\"notnull"; }
+  )
+}
+
+void insertQuery() :			//"insert" query
+{}
+{
+  < INSERT_INTO >
+  tableName()
+  insertColumnsAndSource()
+}
+
+void insertColumnsAndSource() :
+{}
+{
+  (    columnNameList()
+  )?
+  valueList()
+}
+
+void valueList() :
+{}
+{
+  < VALUES >
+  < LEFT_PAREN >
+  value()
+  (    < COMMA >
+    value()
+  )*
+  < RIGHT_PAREN >
+}
+
+void value() :
+{}
+{
+  < NULL >
+| comparableValue()
+}
+
+String deleteQuery() :			//"delete" query
+{
+  String returnValue;
+  String temp;
+}
+{
+  < DELETE_FROM >
+  returnValue = tableName()
+  (    temp = whereClause() {
+      returnValue += "\"\"" + temp;
+    }
+  )?
+  {
+    return returnValue;
+  }
+}
