@@ -190,6 +190,11 @@ public class SimpleDBMSParser
     return;
   }
 
+  public static void dbUpdate(String keyString, String dataString) {
+    dbDelete(keyString);
+    dbPut(keyString, dataString);
+  }
+
   public static void createTableHandler(String query)		//function for "create table" query. argument form is explained in document.
   {
 	String tableName = "_";									//these are the elements for creating new table.
@@ -356,6 +361,8 @@ public class SimpleDBMSParser
 	  dbPut(tableName + "/" + temp, attributeMetaData.get(temp));
 	}
 
+	dbPut(tableName + "\"\"_head_", "_none_");		//record pointer
+
 	if (referenceTableAttributeList.size() != 0) {
 	  for (int i = 0; i != referenceTableAttributeList.size(); i++) {
 	    String temp = referenceTableAttributeList.get(i);
@@ -504,7 +511,17 @@ public class SimpleDBMSParser
     String[] whereClauseList = query.split("\"\"")[2].split("\"");
     ArrayList<String> whereClausePostfixList = whereClauseToPostfix(whereClauseList);
     for (int i = 0; i != whereClausePostfixList.size(); i++) {
-      System.out.print(whereClausePostfixList.get(i) + ",");
+      //System.out.print(whereClausePostfixList.get(i) + ",");
+    }
+    //recordInsert("test__", "6\"'Perry'", "6\"'Perry'\"2017-02-12");
+    //recordDelete("test__", "2\"'Jim'");
+    ArrayList<ArrayList<String>> test = tableMaker("test");
+    for (int i = 0; i != test.size(); i++) {
+      ArrayList<String> row = test.get(i);
+      for (int j = 0; j != row.size(); j++) {
+        System.out.print(row.get(j) + "|");
+      }
+      System.out.println(" ");
     }
   }
 
@@ -521,6 +538,7 @@ public class SimpleDBMSParser
   }
 
   private static boolean isInt(String operand) {
+    if (isDate(operand)) return false;
     return Character.isDigit(operand.charAt(0));
   }
 
@@ -591,6 +609,87 @@ public class SimpleDBMSParser
       stack.remove(stack.size() - 1);
     }
     return result;
+  }
+
+  private static ArrayList<ArrayList<String>> tableMaker(String tableName) {
+    ArrayList<ArrayList<String>> resultTable = new ArrayList<ArrayList<String>>();
+    ArrayList<String> attributeMetaDataList = new ArrayList<String>();
+    String[] attributeList = dbGet(tableName).split(",");
+    resultTable.add(new ArrayList<String>(Arrays.asList(attributeList)));
+    for (int i = 0; i != attributeList.length; i++) {
+      attributeMetaDataList.add(dbGet(tableName + "/" + attributeList[i]));
+    }
+    resultTable.add(attributeMetaDataList);
+    String pointer = dbGet(tableName + "\"\"_head_");
+    while (!pointer.equals("_none_")) {
+      String[] recordNode = dbGet(pointer).split("\"\"\"");
+      String[] record = recordNode[1].split("\"");
+      resultTable.add(new ArrayList<String>(Arrays.asList(record)));
+      pointer = recordNode[2];
+    }
+    return resultTable;
+  }
+
+  private static void recordInsert(String tableName, String primaryKey, String value) {
+    String pointer = dbGet(tableName + "\"\"_head_");
+    if (pointer.equals("_none_")) {
+      String headPointer = tableName + "\"\"" + primaryKey;
+      dbUpdate(tableName + "\"\"_head_", headPointer);
+      String recordNode = "_none_\"\"\"" + value + "\"\"\"_none_";
+      dbPut(headPointer, recordNode);
+      return;
+    }
+    else {
+      String newHeadPointer = tableName + "\"\"" + primaryKey;
+      String recordNode = "_none_\"\"\"" + value + "\"\"\"" + pointer;
+      String[] originalHeadNode = dbGet(pointer).split("\"\"\"");
+      originalHeadNode[0] = newHeadPointer;
+      String originalHeadNodeUpdate = originalHeadNode[0] + "\"\"\"" + originalHeadNode[1] + "\"\"\"" + originalHeadNode[2];
+      dbUpdate(tableName + "\"\"_head_", newHeadPointer);
+      dbPut(newHeadPointer, recordNode);
+      dbUpdate(pointer, originalHeadNodeUpdate);
+      return; 
+    }
+  }
+
+  private static void recordDelete(String tableName, String primaryKey) {
+	String headPointer = dbGet(tableName + "\"\"_head_");
+	String targetPointer = tableName + "\"\"" + primaryKey;
+	String[] targetNode = dbGet(targetPointer).split("\"\"\"");
+	if (headPointer.equals(targetPointer)) {
+	  if (targetNode[2].equals("_none_")) {
+	    dbUpdate(tableName + "\"\"_head_", "_none_");
+	    dbDelete(targetPointer);
+	    return;
+	  }
+	  else {
+	    String newHeadPointer = targetNode[2];
+	    String[] newHeadNode = dbGet(newHeadPointer).split("\"\"\"");
+	    newHeadNode[0] = "_none_";
+	    dbUpdate(tableName + "\"\"_head_", newHeadPointer);
+	    dbUpdate(newHeadPointer, newHeadNode[0] + "\"\"\"" + newHeadNode[1] + "\"\"\"" + newHeadNode[2]);
+	    dbDelete(targetPointer);
+	    return;
+	  }
+	}
+	else {
+	  if (targetNode[2].equals("_none_")) {
+	    String[] previousNode = dbGet(targetNode[0]).split("\"\"\"");
+	    dbUpdate(targetNode[0], previousNode[0] + "\"\"\"" + previousNode[1] + "\"\"\"" + "_none_");
+	    dbDelete(targetPointer);
+	    return;
+	  }
+	  else {
+	    String[] previousNode = dbGet(targetNode[0]).split("\"\"\"");
+	    String[] nextNode = dbGet(targetNode[2]).split("\"\"\"");
+	    previousNode[2] = targetNode[2];
+	    nextNode[0] = targetNode[0];
+	    dbUpdate(targetNode[0], previousNode[0] + "\"\"\"" + previousNode[1] + "\"\"\"" + previousNode[2]);
+	    dbUpdate(targetNode[2], nextNode[0] + "\"\"\"" + nextNode[1] + "\"\"\"" + nextNode[2]);
+	    dbDelete(targetPointer);
+	    return;
+	  }
+	}
   }
 }
 
