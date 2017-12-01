@@ -556,7 +556,7 @@ public class SimpleDBMSParser
         }
       }
     }
-
+	
     for (int i = 0; i != valueList.length; i++) {
       String[] metaDataList = tableColumnMetaDataList.get(i).split(",");
       if (isNull(valueList[i])) {
@@ -610,7 +610,11 @@ public class SimpleDBMSParser
 	  }
     }
 
-    if (primaryKeyValueList.size() == 0) {
+    //test
+    //for (int i = 0; i != valueList.length; i++) System.out.println(valueList[i]);
+	//test
+
+    if (primaryKeyValueList.size() == 0) {			//if there is no primary key constraints, combination of inserted values should be pk.
       for (int i = 0; i != valueList.length; i++) {
         primaryKeyValueList.add(valueList[i]);
       }
@@ -632,34 +636,45 @@ public class SimpleDBMSParser
     }
 
     recordInsert(tableName, primaryKeyValueString, valueString);
+    System.out.println("The row is inserted");
     return;
   }
 
   public static void deleteHandler(String query) {
+
+    String tableName;
+  }
+
+  public static void deleteHandlerTesting(String query) {
+    System.out.println(query);
     String[] whereClauseList = query.split("\"\"")[2].split("\"");
     ArrayList<String> whereClausePostfixList = whereClauseToPostfix(whereClauseList);
     for (int i = 0; i != whereClausePostfixList.size(); i++) {
-      System.out.print(whereClausePostfixList.get(i) + "|");
+      System.out.print(whereClausePostfixList.get(i) + "/");
     }
     System.out.println(" ");
+    String[] calTest = { "null", "'perry'", "=", "'1234'", "null", "=", "2015-01-01", "null", "is", "or", "and", "not" };
+    ArrayList<String> calTest_ = new ArrayList<String>(Arrays.asList(calTest));
+    System.out.println(postfixCalculator(calTest_));
     //recordInsert("test__", "6\"'Perry'", "6\"'Perry'\"2017-02-12");
     //recordDelete("test__", "2\"'Jim'");
-    ArrayList<ArrayList<String>> test = tableMaker("test");
+    /*ArrayList<ArrayList<String>> test = tableMaker("testtest__reference");
     for (int i = 0; i != test.size(); i++) {
       ArrayList<String> row = test.get(i);
       for (int j = 0; j != row.size(); j++) {
         System.out.print(row.get(j) + "|");
       }
       System.out.println(" ");
-    }
+    }*/
     /*ArrayList<Integer> test2 = tableValueFinder(test, "created_date", "2015-12-12");
     System.out.println(test2.size());
     System.out.println(test2.get(0));*/
-	System.out.println("'hello'".substring(1, 6));
+	//System.out.println("'hello'".substring(1, 6));
+	//System.out.println("2015-12-12".compareTo("2016-01-01"));
   }
 
   private static boolean isBoolean(String operand) {
-    return (operand.equals("_true_") || operand.equals("_false_"));
+    return (operand.equals("_true_") || operand.equals("_false_") || operand.equals("_unknown_"));
   }
 
   private static boolean isCharString(String operand) {
@@ -745,6 +760,360 @@ public class SimpleDBMSParser
     return result;
   }
 
+  private static boolean postfixCalculator(ArrayList<String> whereClausePostfixList) {
+    ArrayList<String> operands = new ArrayList<String>();
+    for (int i = 0; i != whereClausePostfixList.size(); i++) {
+      String op = whereClausePostfixList.get(i);
+      if (isOperator(op)) {
+        String rightOperand = "";
+        String leftOperand = "";
+        switch (op) {
+          case "<":
+            rightOperand = operands.get(operands.size() - 1);
+            operands.remove(operands.size() - 1);
+            leftOperand = operands.get(operands.size() - 1);
+            operands.remove(operands.size() - 1);
+            if (leftOperand.equals("null") || rightOperand.equals("null")) {
+              operands.add("_unknown_");
+              break;
+            }
+            if (isInt(leftOperand)) {
+              if (Integer.parseInt(leftOperand) < Integer.parseInt(rightOperand)) {
+                operands.add("_true_");
+                break;
+              }
+              else {
+                operands.add("_false_");
+                break;
+              }
+            }
+            if (isDate(leftOperand)) {
+              if (leftOperand.compareTo(rightOperand) < 0) {
+                operands.add("_true_");
+                break;
+              }
+              else {
+                operands.add("_false_");
+                break;
+              }
+            }
+            if (isCharString(leftOperand)) {
+              if (leftOperand.substring(1, leftOperand.length() - 1).compareTo(rightOperand.substring(1, rightOperand.length() - 1)) < 0) {
+                operands.add("_true_");
+                break;
+              }
+              else {
+                operands.add("_false_");
+                break;
+              }
+            }
+            break;
+            
+          case ">":
+            rightOperand = operands.get(operands.size() - 1);
+            operands.remove(operands.size() - 1);
+            leftOperand = operands.get(operands.size() - 1);
+            operands.remove(operands.size() - 1);
+            if (leftOperand.equals("null") || rightOperand.equals("null")) {
+              operands.add("_unknown_");
+              break;
+            }
+            if (isInt(leftOperand)) {
+              if (Integer.parseInt(leftOperand) > Integer.parseInt(rightOperand)) {
+                operands.add("_true_");
+                break;
+              }
+              else {
+                operands.add("_false_");
+                break;
+              }
+            }
+            if (isDate(leftOperand)) {
+              if (leftOperand.compareTo(rightOperand) > 0) {
+                operands.add("_true_");
+                break;
+              }
+              else {
+                operands.add("_false_");
+                break;
+              }
+            }
+            if (isCharString(leftOperand)) {
+              if (leftOperand.substring(1, leftOperand.length() - 1).compareTo(rightOperand.substring(1, rightOperand.length() - 1)) > 0) {
+                operands.add("_true_");
+                break;
+              }
+              else {
+                operands.add("_false_");
+                break;
+              }
+            }
+            break;
+
+          case "=":
+            rightOperand = operands.get(operands.size() - 1);
+            operands.remove(operands.size() - 1);
+            leftOperand = operands.get(operands.size() - 1);
+            operands.remove(operands.size() - 1);
+            if (leftOperand.equals("null") || rightOperand.equals("null")) {
+              operands.add("_unknown_");
+              break;
+            }
+            if (isInt(leftOperand)) {
+              if (Integer.parseInt(leftOperand) == Integer.parseInt(rightOperand)) {
+                operands.add("_true_");
+                break;
+              }
+              else {
+                operands.add("_false_");
+                break;
+              }
+            }
+            if (isDate(leftOperand)) {
+              if (leftOperand.equals(rightOperand)) {
+                operands.add("_true_");
+                break;
+              }
+              else {
+                operands.add("_false_");
+                break;
+              }
+            }
+            if (isCharString(leftOperand)) {
+              if (leftOperand.substring(1, leftOperand.length() - 1).equals(rightOperand.substring(1, rightOperand.length() - 1))) {
+                operands.add("_true_");
+                break;
+              }
+              else {
+                operands.add("_false_");
+                break;
+              }
+            }
+            break;
+
+          case "<=":
+            rightOperand = operands.get(operands.size() - 1);
+            operands.remove(operands.size() - 1);
+            leftOperand = operands.get(operands.size() - 1);
+            operands.remove(operands.size() - 1);
+            if (leftOperand.equals("null") || rightOperand.equals("null")) {
+              operands.add("_unknown_");
+              break;
+            }
+            if (isInt(leftOperand)) {
+              if (Integer.parseInt(leftOperand) <= Integer.parseInt(rightOperand)) {
+                operands.add("_true_");
+                break;
+              }
+              else {
+                operands.add("_false_");
+                break;
+              }
+            }
+            if (isDate(leftOperand)) {
+              if (leftOperand.compareTo(rightOperand) <= 0) {
+                operands.add("_true_");
+                break;
+              }
+              else {
+                operands.add("_false_");
+                break;
+              }
+            }
+            if (isCharString(leftOperand)) {
+              if (leftOperand.substring(1, leftOperand.length() - 1).compareTo(rightOperand.substring(1, rightOperand.length() - 1)) <= 0) {
+                operands.add("_true_");
+                break;
+              }
+              else {
+                operands.add("_false_");
+                break;
+              }
+            }
+            break;
+
+          case ">=":
+            rightOperand = operands.get(operands.size() - 1);
+            operands.remove(operands.size() - 1);
+            leftOperand = operands.get(operands.size() - 1);
+            operands.remove(operands.size() - 1);
+            if (leftOperand.equals("null") || rightOperand.equals("null")) {
+              operands.add("_unknown_");
+              break;
+            }
+            if (isInt(leftOperand)) {
+              if (Integer.parseInt(leftOperand) >= Integer.parseInt(rightOperand)) {
+                operands.add("_true_");
+                break;
+              }
+              else {
+                operands.add("_false_");
+                break;
+              }
+            }
+            if (isDate(leftOperand)) {
+              if (leftOperand.compareTo(rightOperand) >= 0) {
+                operands.add("_true_");
+                break;
+              }
+              else {
+                operands.add("_false_");
+                break;
+              }
+            }
+            if (isCharString(leftOperand)) {
+              if (leftOperand.substring(1, leftOperand.length() - 1).compareTo(rightOperand.substring(1, rightOperand.length() - 1)) >= 0) {
+                operands.add("_true_");
+                break;
+              }
+              else {
+                operands.add("_false_");
+                break;
+              }
+            }
+            break;
+
+          case "!=":
+            rightOperand = operands.get(operands.size() - 1);
+            operands.remove(operands.size() - 1);
+            leftOperand = operands.get(operands.size() - 1);
+            operands.remove(operands.size() - 1);
+            if (leftOperand.equals("null") || rightOperand.equals("null")) {
+              operands.add("_unknown_");
+              break;
+            }
+            if (isInt(leftOperand)) {
+              if (Integer.parseInt(leftOperand) != Integer.parseInt(rightOperand)) {
+                operands.add("_true_");
+                break;
+              }
+              else {
+                operands.add("_false_");
+                break;
+              }
+            }
+            if (isDate(leftOperand)) {
+              if (!leftOperand.equals(rightOperand)) {
+                operands.add("_true_");
+                break;
+              }
+              else {
+                operands.add("_false_");
+                break;
+              }
+            }
+            if (isCharString(leftOperand)) {
+              if (!leftOperand.substring(1, leftOperand.length() - 1).equals(rightOperand.substring(1, rightOperand.length() - 1))) {
+                operands.add("_true_");
+                break;
+              }
+              else {
+                operands.add("_false_");
+                break;
+              }
+            }
+            break;
+
+          case "is":
+            rightOperand = operands.get(operands.size() - 1);
+            operands.remove(operands.size() - 1);
+            leftOperand = operands.get(operands.size() - 1);
+            operands.remove(operands.size() - 1);
+            if (rightOperand.equals("null")) {
+              if (leftOperand.equals("null")) {
+                operands.add("_true_");
+                break;
+              }
+              else {
+                operands.add("_false_");
+                break;
+              }
+            }
+            else {
+              if (leftOperand.equals("null")) {
+                operands.add("_false_");
+                break;
+              }
+              else {
+                operands.add("_true_");
+                break;
+              }
+            }
+
+          case "not":
+            rightOperand = operands.get(operands.size() - 1);
+            operands.remove(operands.size() - 1);
+            if (rightOperand.equals("_true_")) {
+              operands.add("_false_");
+              break;
+            }
+            else if (rightOperand.equals("_false_")) {
+              operands.add("_true_");
+              break;
+            }
+            else {
+              operands.add("_unknown_");
+              break;
+            }
+
+          case "and":
+            rightOperand = operands.get(operands.size() - 1);
+            operands.remove(operands.size() - 1);
+            leftOperand = operands.get(operands.size() - 1);
+            operands.remove(operands.size() - 1);
+            if (leftOperand.equals("_false_") || rightOperand.equals("_false_")) {
+              operands.add("_false_");
+              break;
+            }
+            else if (leftOperand.equals("_unknown_") || rightOperand.equals("_unknown_")) {
+              operands.add("_unknown_");
+              break;
+            }
+            else {
+              operands.add("_true_");
+              break;
+            }
+
+          case "or":
+            rightOperand = operands.get(operands.size() - 1);
+            operands.remove(operands.size() - 1);
+            leftOperand = operands.get(operands.size() - 1);
+            operands.remove(operands.size() - 1);
+            if (leftOperand.equals("_true_") || rightOperand.equals("_true_")) {
+              operands.add("_true_");
+              break;
+            }
+            else if (leftOperand.equals("_unknown_") || rightOperand.equals("_unknown_")) {
+              operands.add("_unknown_");
+              break;
+            }
+            else {
+              operands.add("_false_");
+              break;
+            }
+
+          default:
+            System.out.println("Error");
+            break;
+        }
+        //test
+        System.out.println(leftOperand + " " + op + " " + rightOperand);
+        System.out.println(operands.get(operands.size() - 1));
+        System.out.println("--");
+        //test
+      }
+      else {
+        operands.add(op);
+        //test
+        System.out.println(op);
+        System.out.println("--");
+        //test
+      }
+    }
+    if (operands.get(0).equals("_true_")) return true;
+    return false;
+  }
+
   private static ArrayList<ArrayList<String>> tableMaker(String tableName) {
     ArrayList<ArrayList<String>> resultTable = new ArrayList<ArrayList<String>>();
     ArrayList<String> attributeMetaDataList = new ArrayList<String>();
@@ -758,7 +1127,9 @@ public class SimpleDBMSParser
     while (!pointer.equals("_none_")) {
       String[] recordNode = dbGet(pointer).split("\"\"\"");
       String[] record = recordNode[1].split("\"");
-      resultTable.add(new ArrayList<String>(Arrays.asList(record)));
+      ArrayList<String> recordTemp = new ArrayList<String>(Arrays.asList(record));
+      recordTemp.add(pointer);
+      resultTable.add(recordTemp);
       pointer = recordNode[2];
     }
     return resultTable;
@@ -767,7 +1138,7 @@ public class SimpleDBMSParser
   private static ArrayList<Integer> tableValueFinder(ArrayList<ArrayList<String>> table, String column, String value) {
 	if (table.size() == 2) return null;
     ArrayList<Integer> resultList = new ArrayList<Integer>();
-    int columnIndex = 0;
+    int columnIndex = -1;
     for (int i = 0; i != table.get(0).size(); i++) {
       if (table.get(0).get(i).equals(column)) columnIndex = i;
     }
@@ -949,13 +1320,13 @@ void queryList() :		//query list consists of queries ended with semicolon
           showTablesHandler();
           break;
         case PRINT_INSERT:
-          System.out.println(q.substring(1, q.length()));
+          insertHandler(q.substring(1, q.length()));
           break;
         case PRINT_DELETE:
-          System.out.println(q.substring(1, q.length()));
+          /*System.out.println(q.substring(1, q.length()));
           System.out.println("a\"b\"'c'\"\"d".split("\"\"")[1]);
           System.out.println("abc".contains("bc"));
-          System.out.println(Character.isDigit("123".charAt(0)));
+          System.out.println(Character.isDigit("123".charAt(0)));*/
           deleteHandler(q.substring(1, q.length()));
           break;
       }
