@@ -643,6 +643,94 @@ public class SimpleDBMSParser
   public static void deleteHandler(String query) {
 
     String tableName;
+    ArrayList<ArrayList<String>> table;
+    ArrayList<String> tableColumnList;
+    ArrayList<ArrayList<String>> tableColumnMetaDataList = new ArrayList<ArrayList<String>>();
+    
+    ArrayList<String> whereClausePostfixList = null;
+    ArrayList<ArrayList<Integer>> whereClausePostfixColumnIndexList = new ArrayList<ArrayList<Integer>>();
+
+    if (!query.contains("\"\"")) {
+      tableName = query;
+      if (dbGet(tableName) == null) {
+        System.out.println("No such table");
+        return;
+      }
+    }
+    else {
+      String[] querySlice = query.split("\"\"");
+      tableName = querySlice[0];
+      if (dbGet(tableName) == null) {
+        System.out.println("No such table");
+        return;
+      }
+      whereClausePostfixList = whereClauseToPostfix(querySlice[2].split("\""));
+    }
+
+    table = tableMaker(tableName);
+    tableColumnList = table.get(0);
+    for (int i = 0; i != tableColumnList.size(); i++) {
+      String attributeMetaData = table.get(1).get(i);
+      tableColumnMetaDataList.add(new ArrayList<String>(Arrays.asList(attributeMetaData.split(","))));
+    }
+
+    if (whereClausePostfixList != null) {
+      for (int i = 0; i != whereClausePostfixList.size(); i++) {
+        String op = whereClausePostfixList.get(i);
+        if (isColumn(op)) {
+          String whereColumn;
+          if (op.contains(".")) {
+            String[] tableColumn = op.split(".");
+            if (!tableName.equals(tableColumn[0])) {
+              System.out.println("Where clause try to reference tables which are not specified");
+              return;
+            }
+            whereColumn = tableColumn[1];
+            whereClausePostfixList.set(i, whereColumn);
+          }
+          else {
+            whereColumn = op;
+          }
+          int columnIdx = tableColumnList.indexOf(whereColumn);
+          if (columnIdx == -1) {
+            System.out.println("Where clause try to reference non existing column");
+            return;
+          }
+          ArrayList<Integer> indexPair = new ArrayList<Integer>();
+          indexPair.add(i);
+          indexPair.add(columnIdx);
+          whereClausePostfixColumnIndexList.add(indexPair);
+        }
+        else if (isCompOperator(op) && !op.equals("is")) {
+          String leftOperand = whereClausePostfixList.get(i - 2);
+          String rightOperand = whereClausePostfixList.get(i - 1);
+          String leftOperandType;
+          String rightOperandType;
+          if (isColumn(leftOperand)) {
+            int leftOperandIndex = tableColumnList.indexOf(leftOperand);
+            leftOperandType = tableColumnMetaDataList.get(leftOperandIndex).get(0);
+          }
+          else {
+            if (isInt(leftOperand)) leftOperandType = "int";
+            else if (isDate(leftOperand)) leftOperandType = "date";
+            else leftOperandType = "char";
+          }
+          if (isColumn(rightOperand)) {
+            int rightOperandIndex = tableColumnList.indexOf(rightOperand);
+            rightOperandType = tableColumnMetaDataList.get(rightOperandIndex).get(0);
+          }
+          else {
+            if (isInt(rightOperand)) rightOperandType = "int";
+            else if (isDate(rightOperand)) rightOperandType = "date";
+            else rightOperandType = "char";
+          }
+          if (!leftOperandType.substring(0, 2).equals(rightOperandType.substring(0, 2))) {
+            System.out.println("Where clause try to compare incomparable values");
+            return;
+          }
+        }
+      }
+    }
   }
 
   public static void deleteHandlerTesting(String query) {
@@ -682,6 +770,7 @@ public class SimpleDBMSParser
   }
 
   private static boolean isDate(String operand) {
+    if (isCharString(operand)) return false;
     return operand.contains("-");
   }
 
@@ -691,8 +780,7 @@ public class SimpleDBMSParser
   }
 
   private static boolean isNull(String operand) {
-    if (isCharString(operand)) return false;
-    return operand.contains("null");
+    return (operand.equals("null") || operand.equals("notnull"));
   }
 
   private static int operatorOrder(String operator) {
@@ -1128,7 +1216,7 @@ public class SimpleDBMSParser
       String[] recordNode = dbGet(pointer).split("\"\"\"");
       String[] record = recordNode[1].split("\"");
       ArrayList<String> recordTemp = new ArrayList<String>(Arrays.asList(record));
-      recordTemp.add(pointer);
+      recordTemp.add(pointer.split("\"\"")[1]);
       resultTable.add(recordTemp);
       pointer = recordNode[2];
     }
@@ -1174,6 +1262,17 @@ public class SimpleDBMSParser
     }
   }
 
+  private static void recordUpdate(String tableName, String primaryKey, ArrayList<String> value) {
+    String targetPointer = tableName + "\"\"" + primaryKey;
+    String[] targetNode = dbGet(targetPointer).split("\"\"\"");
+    String newValue = value.get(0);
+    for (int i = 1; i != value.size(); i++) {
+      newValue += "\"" + value.get(i);
+    }
+    newValue = targetNode[0] + "\"\"\"" + newValue + "\"\"\"" + targetNode[2];
+    dbUpdate(targetPointer, newValue);
+  }
+
   private static void recordDelete(String tableName, String primaryKey) {
 	String headPointer = dbGet(tableName + "\"\"_head_");
 	String targetPointer = tableName + "\"\"" + primaryKey;
@@ -1212,6 +1311,76 @@ public class SimpleDBMSParser
 	    return;
 	  }
 	}
+  }
+
+  private static boolean referencedRecordDeletable(String referenceList, String value) {
+    if (referenceList.contains("+")) {
+      int idx = referenceList.indexOf("+");
+      return referencedRecordDeletable(referenceList.substring(0, idx), value)
+        && referencedRecordDeletable(referenceList.substring(idx + 1, referenceList.length()), value);
+    }
+    else {
+      String[] tableColumnName = referenceList.split("/");
+      String tableName = tableColumnName[0];
+      String columnName = tableColumnName[1];
+      ArrayList<ArrayList<String>> table = tableMaker(tableName);
+      ArrayList<Integer> findResult = tableValueFinder(table, columnName, value);
+      if (findResult == null) {
+        return true;
+      }
+      else {
+        int colIdx = findResult.get(findResult.size() - 1);
+        String[] metaDataList = table.get(1).get(colIdx).split(",");
+        if (metaDataList[1].equals("N")) {
+          return false;
+        }
+        else {
+          if (metaDataList[4].equals("NR")) {
+            return true;
+          }
+          else {
+            return referencedRecordDeletable(metaDataList[6], value);
+          }
+        }
+      }
+    }
+  }
+
+  private static void referencingRecordUpdate(String referenceList, String value) {
+    if (referenceList.contains("+")) {
+      int idx = referenceList.indexOf("+");
+      referencingRecordUpdate(referenceList.substring(0, idx), value);
+      referencingRecordUpdate(referenceList.substring(idx + 1, referenceList.length()), value);
+      return;
+    }
+    else {
+      String[] tableColumnName = referenceList.split("/");
+      String tableName = tableColumnName[0];
+      String columnName = tableColumnName[1];
+      ArrayList<ArrayList<String>> table = tableMaker(tableName);
+      ArrayList<Integer> findResult = tableValueFinder(table, columnName, value);
+      if (findResult == null) {
+        return;
+      }
+      else {
+        int colIdx = findResult.get(findResult.size() - 1);
+        String[] metaDataList = table.get(1).get(colIdx).split(",");
+        for (int i = 0; i != findResult.size() - 1; i++) {
+          ArrayList<String> record = table.get(findResult.get(i));
+          String primaryKey = record.get(record.size() - 1);
+          record.remove(record.size() - 1);
+          record.set(colIdx, "null");
+          recordUpdate(tableName, primaryKey, record);
+        }
+        if (metaDataList[4].equals("NR")) {
+          return;
+        }
+        else {
+          referencingRecordUpdate(metaDataList[6], value);
+          return;
+        }
+      }
+    }
   }
 }
 
@@ -1327,7 +1496,8 @@ void queryList() :		//query list consists of queries ended with semicolon
           System.out.println("a\"b\"'c'\"\"d".split("\"\"")[1]);
           System.out.println("abc".contains("bc"));
           System.out.println(Character.isDigit("123".charAt(0)));*/
-          deleteHandler(q.substring(1, q.length()));
+          //deleteHandler(q.substring(1, q.length()));
+          System.out.println("hello+world+!".substring(0, "hello+world+!".length()));
           break;
       }
       System.out.print("DB_2015-16535> ");
