@@ -472,7 +472,7 @@ public class SimpleDBMSParser implements SimpleDBMSParserConstants {
               String keyString = new String(foundKey.getData(), "UTF-8");
               String dataString = new String(foundData.getData(), "UTF-8");
 
-              if (keyString.indexOf("/") == -1) {               //key for table name does not contain "/".
+              if (keyString.indexOf("/") == -1 && keyString.indexOf("\u005c"\u005c"") == -1) {            //key for table name does not contain "/".
                 tableList.add(keyString);
               }
             }
@@ -777,6 +777,268 @@ public class SimpleDBMSParser implements SimpleDBMSParserConstants {
     if (deletePassedCount != 0) {
       System.out.println(String.valueOf(deletePassedCount) + " row(s) are not deleted due to referential integrity");
     }
+  }
+
+  public static void selectHandler(String query) {
+
+    String[] querySlice = query.split("\u005c"\u005c"\u005c"");
+
+    ArrayList<String> tableNameList = new ArrayList<String>();
+    HashMap<String, ArrayList<ArrayList<String>>> tableList = new HashMap<String, ArrayList<ArrayList<String>>>();
+
+    ArrayList<String> columnList = new ArrayList<String>();
+
+    ArrayList<String> asNameList = new ArrayList<String>();
+    HashMap<String, String> asNameTranslate = new HashMap<String, String>();
+
+    ArrayList<String> whereClausePostfixList = null;
+        ArrayList<ArrayList<Integer>> whereClausePostfixColumnIndexList = new ArrayList<ArrayList<Integer>>();
+
+
+    if (querySlice[1].contains("\u005c"\u005c"")) {
+      String[] tableNames = querySlice[1].split("\u005c"\u005c"");
+      for (int i = 0; i != tableNames.length; i++) {
+        if (tableNames[i].contains("\u005c"")) {
+          String[] referedTable = tableNames[i].split("\u005c"");
+          if (dbGet(referedTable[0]) == null) {
+                System.out.println("Selection has failed: \u005c'" + referedTable[0] + "\u005c' does not exist");
+                return;
+              }
+              if (asNameList.contains(referedTable[1]) || tableNameList.contains(referedTable[1])) {
+                System.out.println("Selection has failed: identifier \u005c'" + referedTable[1] + "\u005c' is duplicated");
+                return;
+              }
+              tableNameList.add(referedTable[1]);
+              tableList.put(referedTable[1], tableMaker(referedTable[0]));
+              asNameList.add(referedTable[1]);
+              asNameTranslate.put(referedTable[1], referedTable[0]);
+        }
+        else {
+          if (dbGet(tableNames[i]) == null) {
+                System.out.println("Selection has failed: \u005c'" + tableNames[i] + "\u005c' does not exist");
+                return;
+              }
+              if (tableNameList.contains(tableNames[i])) {
+                System.out.println("Selection has failed: identifier \u005c'" + tableNames[i] + "\u005c' is duplicated");
+                return;
+              }
+              tableNameList.add(tableNames[i]);
+              tableList.put(tableNames[i], tableMaker(tableNames[i]));
+        }
+      }
+    }
+    else {
+      if (querySlice[1].contains("\u005c"")) {
+        String[] referedTable = querySlice[1].split("\u005c"");
+        if (dbGet(referedTable[0]) == null) {
+              System.out.println("Selection has failed: \u005c'" + referedTable[0] + "\u005c' does not exist");
+              return;
+            }
+            if (asNameList.contains(referedTable[1]) || tableNameList.contains(referedTable[1])) {
+              System.out.println("Selection has failed: identifier \u005c'" + referedTable[1] + "\u005c' is duplicated");
+              return;
+            }
+            tableNameList.add(referedTable[1]);
+            tableList.put(referedTable[1], tableMaker(referedTable[0]));
+            asNameList.add(referedTable[1]);
+            asNameTranslate.put(referedTable[1], referedTable[0]);
+      }
+      else {
+        if (dbGet(querySlice[1]) == null) {
+              System.out.println("Selection has failed: \u005c'" + querySlice[1] + "\u005c' does not exist");
+              return;
+            }
+            if (tableNameList.contains(querySlice[1])) {
+              System.out.println("Selection has failed: identifier \u005c'" + querySlice[1] + "\u005c' is duplicated");
+              return;
+            }
+            tableNameList.add(querySlice[1]);
+            tableList.put(querySlice[1], tableMaker(querySlice[1]));
+      }
+    }
+
+    if (querySlice[0].equals("*")) {
+      columnList.add("*");
+    }
+    else {
+      ArrayList<String> columnNames;
+      if (querySlice[0].contains("\u005c"\u005c"")) {
+        columnNames = new ArrayList<String>(Arrays.asList(querySlice[0].split("\u005c"\u005c"")));
+      }
+      else {
+        columnNames = new ArrayList<String>();
+        columnNames.add(querySlice[0]);
+      }
+      for (int i = 0; i != columnNames.size(); i++) {
+        ArrayList<String> referedColumn = new ArrayList<String>();
+        referedColumn.add(null);referedColumn.add(null);referedColumn.add(null);
+        String col;
+        if (columnNames.get(i).contains("\u005c"")) {
+          String[] colSlice = columnNames.get(i).split("\u005c"");
+          if (asNameList.contains(colSlice[1])) {
+                System.out.println("Selection has failed: identifier \u005c'" + colSlice[1] + "\u005c' is duplicated");
+                return;
+              }
+              referedColumn.set(2, colSlice[1]);
+              col = colSlice[0];
+        }
+        else {
+          col = columnNames.get(i);
+        }
+        if (col.contains("/")) {
+          String[] colSlice = col.split("/");
+          if (!tableNameList.contains(colSlice[0])) {
+            System.out.println("Selection has failed: fail to resolve '" + colSlice[1] + "'");
+            return;
+          }
+          if (!tableList.get(colSlice[0]).get(0).contains(colSlice[1])) {
+            System.out.println("Selection has failed: fail to resolve '" + colSlice[1] + "'");
+            return;
+          }
+          referedColumn.set(0, colSlice[0]);
+          referedColumn.set(1, colSlice[1]);
+        }
+        else {
+          String whichTable = "";
+          int howMany = 0;
+          for (int j = 0; j != tableNameList.size(); j++) {
+            if (tableList.get(tableNameList.get(j)).get(0).contains(col)) {
+              whichTable = tableNameList.get(j);
+              howMany++;
+            }
+          }
+          if (howMany != 1) {
+            System.out.println("Selection has failed: fail to resolve '" + col + "'");
+            return;
+          }
+          referedColumn.set(0, whichTable);
+          referedColumn.set(1, col);
+        }
+        String finalColumnName = referedColumn.get(0) + "/" + referedColumn.get(1);
+        if (columnList.contains(finalColumnName)) {
+          System.out.println("Selection has failed: fail to resolve '" + referedColumn.get(1) + "'");
+          return;
+        }
+        if (referedColumn.get(2) == null) {
+          columnList.add(finalColumnName);
+        }
+        else {
+          columnList.add(referedColumn.get(2));
+          asNameList.add(referedColumn.get(2));
+          asNameTranslate.put(referedColumn.get(2), finalColumnName);
+        }
+      }
+    }
+
+        //test
+    for (int i = 0; i != tableNameList.size(); i++) {
+      System.out.print(tableNameList.get(i) + "/");
+    }
+    System.out.println("");
+    for (int i = 0; i != columnList.size(); i++) {
+      System.out.print(columnList.get(i) + "    ");
+    }
+    System.out.println("");
+    for (int i = 0; i != asNameList.size(); i++) {
+      System.out.print(asNameList.get(i) + ":" + asNameTranslate.get(asNameList.get(i)) + "    ");
+    }
+    System.out.println("");
+        //test
+
+        if (querySlice.length == 3) {
+          whereClausePostfixList = whereClauseToPostfix(querySlice[2].split("\u005c"\u005c"")[1].split("\u005c""));
+          for (int i = 0; i != whereClausePostfixList.size(); i++) {
+            String op = whereClausePostfixList.get(i);
+            if (isColumn(op)) {
+              String whereTable = "", whereColumn = "";
+              int tableIndex = -1, columnIndex = -1;
+              if (op.contains(".")) {
+                String[] tableColumn = op.split("\u005c\u005c.");
+                tableIndex = tableNameList.indexOf(tableColumn[0]);
+                if (tableIndex == -1) {
+                  System.out.println("Where clause try to reference tables which are not specified");
+              return;
+                }
+                whereTable = tableColumn[0];
+                whereColumn = tableColumn[1];
+                columnIndex = tableList.get(whereTable).get(0).indexOf(whereColumn);
+                if (columnIndex == -1) {
+                  System.out.println("Where clause try to reference non existing column");
+              return;
+                }
+              }
+              else {
+                if (columnList.contains(op)) {
+                  String[] tableColumn = asNameTranslate.get(op).split("/");
+                  whereTable = tableColumn[0];
+                  whereColumn = tableColumn[1];
+                  tableIndex = tableNameList.indexOf(whereTable);
+                  columnIndex = tableList.get(whereTable).get(0).indexOf(whereColumn);
+                }
+                else {
+                  int howMany = 0;
+                  for (int j = 0; j != tableNameList.size(); j++) {
+                    int colTest = tableList.get(tableNameList.get(j)).get(0).indexOf(op);
+                    if (colTest != -1) {
+                      howMany++;
+                      tableIndex = j;
+                      columnIndex = colTest;
+                      whereTable = tableNameList.get(j);
+                      whereColumn = op;
+                    }
+                  }
+                  if (howMany == 0) {
+                    System.out.println("Where clause try to reference non existing column");
+                return;
+                  }
+                  if (howMany > 1) {
+                    System.out.println("Where clause contains ambiguous reference");
+                    return;
+                  }
+                }
+              }
+              whereClausePostfixList.set(i, whereTable + "/" + whereColumn);
+              ArrayList<Integer> indexPair = new ArrayList<Integer>();
+              indexPair.add(i);
+              indexPair.add(tableIndex);
+              indexPair.add(columnIndex);
+            }
+            else if (isCompOperator(op) && !op.equals("is")) {
+              String leftOperand = whereClausePostfixList.get(i - 2);
+          String rightOperand = whereClausePostfixList.get(i - 1);
+          String leftOperandType;
+          String rightOperandType;
+          if (isInt(leftOperand)) leftOperandType = "int";
+          else if (isDate(leftOperand)) leftOperandType = "date";
+          else if (isCharString(leftOperand)) leftOperandType = "char";
+          else {
+            String[] leftOperandSlice = leftOperand.split("/");
+            int leftOperandIndex = tableList.get(leftOperandSlice[0]).get(0).indexOf(leftOperandSlice[1]);
+            leftOperandType = tableList.get(leftOperandSlice[0]).get(1).get(leftOperandIndex).split(",")[0];
+          }
+          if (isInt(rightOperand)) rightOperandType = "int";
+          else if (isDate(rightOperand)) rightOperandType = "date";
+          else if (isCharString(rightOperand)) rightOperandType = "char";
+          else {
+            String[] rightOperandSlice = rightOperand.split("/");
+            int rightOperandIndex = tableList.get(rightOperandSlice[0]).get(0).indexOf(rightOperandSlice[1]);
+            rightOperandType = tableList.get(rightOperandSlice[0]).get(1).get(rightOperandIndex).split(",")[0];
+          }
+          if (!leftOperandType.substring(0, 2).equals(rightOperandType.substring(0, 2))) {
+            System.out.println("Where clause try to compare incomparable values");
+            return;
+          }
+            }
+          }
+
+          //test
+          for (int i = 0; i != whereClausePostfixList.size(); i++) {
+            System.out.print(whereClausePostfixList.get(i) + "  ");
+          }
+          System.out.println("");
+          //test
+        }
+
   }
 
   public static void deleteHandlerTesting() {
@@ -1429,6 +1691,31 @@ public class SimpleDBMSParser implements SimpleDBMSParserConstants {
     }
   }
 
+  private static int[][] generateCombinations(int[] indices) {
+    int num = 1;
+    for (int i = 0; i != indices.length; i++) {
+      num *= indices[i];
+    }
+    int[][] result = new int[num][indices.length];
+    int[] combination = new int[indices.length];
+    for (int i = 0; i != num; i++) {
+      int[] comb = result[i];
+      for (int j = 0; j != indices.length; j++) {
+        comb[j] = combination[j];
+      }
+      for (int j = indices.length - 1; j >= 0; j--) {
+        int n = ++combination[j];
+        if (n >= indices[j]) {
+          combination[j] = 0;
+        }
+        else {
+          break;
+        }
+      }
+    }
+    return result;
+  }
+
   static final public void command() throws ParseException {
     switch ((jj_ntk==-1)?jj_ntk():jj_ntk) {
     case CREATE_TABLE:
@@ -1481,7 +1768,18 @@ public class SimpleDBMSParser implements SimpleDBMSParserConstants {
           System.out.println("a\"b\"'c'\"\"d".split("\"\"")[1]);
           System.out.println("abc".contains("bc"));
           System.out.println(Character.isDigit("123".charAt(0)));*/
-          deleteHandler(q.substring(1, q.length()));
+          //deleteHandler(q.substring(1, q.length()));
+          int[][] testing = generateCombinations(new int[] { 2, 5 });
+          for (int i = 0; i != testing.length; i++) {
+            for (int j = 0; j != testing[i].length; j++) {
+              System.out.print(testing[i][j]);
+              System.out.print(" ");
+            }
+            System.out.println("");
+          }
+          break;
+        case PRINT_SELECT:
+          selectHandler(q.substring(1, q.length()));
           break;
       }
       System.out.print("DB_2015-16535> ");
@@ -1519,7 +1817,7 @@ public class SimpleDBMSParser implements SimpleDBMSParserConstants {
               q = PRINT_DESC;
       break;
     case SELECT:
-      selectQuery();
+      argument = selectQuery();
               q = PRINT_SELECT;
       break;
     case INSERT_INTO:
@@ -1750,19 +2048,26 @@ public class SimpleDBMSParser implements SimpleDBMSParserConstants {
     jj_consume_token(SHOW_TABLES);
   }
 
-  static final public void selectQuery() throws ParseException {
+  static final public String selectQuery() throws ParseException {
+  String returnValue;
+  String temp;
     jj_consume_token(SELECT);
-    selectList();
-    tableExpression();
+    returnValue = selectList();
+    temp = tableExpression();
+    {if (true) return returnValue + "\u005c"\u005c"\u005c"" + temp;}
+    throw new Error("Missing return statement in function");
   }
 
-  static final public void selectList() throws ParseException {
+  static final public String selectList() throws ParseException {
+  String returnValue;
+  String temp;
     switch ((jj_ntk==-1)?jj_ntk():jj_ntk) {
     case ASTERISK:
       jj_consume_token(ASTERISK);
+                 {if (true) return "*";}
       break;
     case LEGAL_IDENTIFIER:
-      selectedColumn();
+      returnValue = selectedColumn();
       label_4:
       while (true) {
         switch ((jj_ntk==-1)?jj_ntk():jj_ntk) {
@@ -1774,22 +2079,28 @@ public class SimpleDBMSParser implements SimpleDBMSParserConstants {
           break label_4;
         }
         jj_consume_token(COMMA);
-        selectedColumn();
+        temp = selectedColumn();
+        returnValue += "\u005c"\u005c"" + temp;
       }
+      {if (true) return returnValue;}
       break;
     default:
       jj_la1[10] = jj_gen;
       jj_consume_token(-1);
       throw new ParseException();
     }
+    throw new Error("Missing return statement in function");
   }
 
-  static final public void selectedColumn() throws ParseException {
-    columnName();
+  static final public String selectedColumn() throws ParseException {
+  String returnValue;
+  String temp;
+    returnValue = columnName();
     switch ((jj_ntk==-1)?jj_ntk():jj_ntk) {
     case PERIOD:
       jj_consume_token(PERIOD);
-      tableName();
+      temp = tableName();
+      returnValue += "/" + temp;
       break;
     default:
       jj_la1[11] = jj_gen;
@@ -1798,33 +2109,46 @@ public class SimpleDBMSParser implements SimpleDBMSParserConstants {
     switch ((jj_ntk==-1)?jj_ntk():jj_ntk) {
     case AS:
       jj_consume_token(AS);
-      columnName();
+      temp = columnName();
+      returnValue += "\u005c"" + temp;
       break;
     default:
       jj_la1[12] = jj_gen;
       ;
     }
+    {if (true) return returnValue;}
+    throw new Error("Missing return statement in function");
   }
 
-  static final public void tableExpression() throws ParseException {
-    fromClause();
+  static final public String tableExpression() throws ParseException {
+  String returnValue;
+  String temp;
+    returnValue = fromClause();
     switch ((jj_ntk==-1)?jj_ntk():jj_ntk) {
     case WHERE:
-      whereClause();
+      temp = whereClause();
+      returnValue += "\u005c"\u005c"\u005c"" + temp;
       break;
     default:
       jj_la1[13] = jj_gen;
       ;
     }
+    {if (true) return returnValue;}
+    throw new Error("Missing return statement in function");
   }
 
-  static final public void fromClause() throws ParseException {
+  static final public String fromClause() throws ParseException {
+  String returnValue;
     jj_consume_token(FROM);
-    tableReferenceList();
+    returnValue = tableReferenceList();
+    {if (true) return returnValue;}
+    throw new Error("Missing return statement in function");
   }
 
-  static final public void tableReferenceList() throws ParseException {
-    referedTable();
+  static final public String tableReferenceList() throws ParseException {
+  String returnValue;
+  String temp;
+    returnValue = referedTable();
     label_5:
     while (true) {
       switch ((jj_ntk==-1)?jj_ntk():jj_ntk) {
@@ -1836,21 +2160,29 @@ public class SimpleDBMSParser implements SimpleDBMSParserConstants {
         break label_5;
       }
       jj_consume_token(COMMA);
-      referedTable();
+      temp = referedTable();
+      returnValue += "\u005c"\u005c"" + temp;
     }
+    {if (true) return returnValue;}
+    throw new Error("Missing return statement in function");
   }
 
-  static final public void referedTable() throws ParseException {
-    tableName();
+  static final public String referedTable() throws ParseException {
+  String returnValue;
+  String temp;
+    returnValue = tableName();
     switch ((jj_ntk==-1)?jj_ntk():jj_ntk) {
     case AS:
       jj_consume_token(AS);
-      tableName();
+      temp = tableName();
+      returnValue += "\u005c"" + temp;
       break;
     default:
       jj_la1[15] = jj_gen;
       ;
     }
+    {if (true) return returnValue;}
+    throw new Error("Missing return statement in function");
   }
 
   static final public String whereClause() throws ParseException {
