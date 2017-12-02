@@ -642,6 +642,9 @@ public class SimpleDBMSParser
 
   public static void deleteHandler(String query) {
 
+    int deleteResultCount = 0;
+    int deletePassedCount = 0;
+
     String tableName;
     ArrayList<ArrayList<String>> table;
     ArrayList<String> tableColumnList;
@@ -680,7 +683,7 @@ public class SimpleDBMSParser
         if (isColumn(op)) {
           String whereColumn;
           if (op.contains(".")) {
-            String[] tableColumn = op.split(".");
+            String[] tableColumn = op.split("\\.");
             if (!tableName.equals(tableColumn[0])) {
               System.out.println("Where clause try to reference tables which are not specified");
               return;
@@ -731,10 +734,62 @@ public class SimpleDBMSParser
         }
       }
     }
+
+    for (int i = 2; i != table.size(); i++) {
+      ArrayList<String> record = table.get(i);
+      boolean whereClauseResult;
+      if (whereClausePostfixList == null) {
+        whereClauseResult = true;
+      }
+      else {
+        ArrayList<String> whereClauseExpression = (ArrayList<String>) whereClausePostfixList.clone();
+        for (int j = 0; j != whereClausePostfixColumnIndexList.size(); j++) {
+          ArrayList<Integer> expColPair = whereClausePostfixColumnIndexList.get(j);
+          int expIndex = expColPair.get(0);
+          int colIndex = expColPair.get(1);
+          whereClauseExpression.set(expIndex, record.get(colIndex));
+        }
+        whereClauseResult = postfixCalculator(whereClauseExpression);
+      }
+
+      if (whereClauseResult) {
+        boolean deletable = true;
+        ArrayList<ArrayList<String>> referenceList = new ArrayList<ArrayList<String>>();
+        for (int j = 0; j != tableColumnMetaDataList.size(); j++) {
+          if (deletable && tableColumnMetaDataList.get(j).get(4).equals("R")) {
+            ArrayList<String> referenceElement = new ArrayList<String>();
+            referenceElement.add(tableColumnMetaDataList.get(j).get(6));
+            referenceElement.add(record.get(j));
+            boolean deletableTestResult = referencedRecordDeletable(referenceElement.get(0), referenceElement.get(1));
+            if (!deletableTestResult) {
+              deletable = false;
+            }
+            else {
+              referenceList.add(referenceElement);
+            }
+          }
+        }
+        if (deletable) {
+          deleteResultCount++;
+          recordDelete(tableName, record.get(record.size() - 1));
+          for (int j = 0; j != referenceList.size(); j++) {
+            referencingRecordUpdate(referenceList.get(j).get(0), referenceList.get(j).get(1));
+          }
+        }
+        else {
+          deletePassedCount++;
+        }
+      }
+    }
+
+    System.out.println(String.valueOf(deleteResultCount) + " row(s) are deleted");
+    if (deletePassedCount != 0) {
+      System.out.println(String.valueOf(deletePassedCount) + " row(s) are not deleted due to referential integrity");
+    }
   }
 
-  public static void deleteHandlerTesting(String query) {
-    System.out.println(query);
+  public static void deleteHandlerTesting() {
+    /*System.out.println(query);
     String[] whereClauseList = query.split("\"\"")[2].split("\"");
     ArrayList<String> whereClausePostfixList = whereClauseToPostfix(whereClauseList);
     for (int i = 0; i != whereClausePostfixList.size(); i++) {
@@ -743,17 +798,17 @@ public class SimpleDBMSParser
     System.out.println(" ");
     String[] calTest = { "null", "'perry'", "=", "'1234'", "null", "=", "2015-01-01", "null", "is", "or", "and", "not" };
     ArrayList<String> calTest_ = new ArrayList<String>(Arrays.asList(calTest));
-    System.out.println(postfixCalculator(calTest_));
+    System.out.println(postfixCalculator(calTest_));*/
     //recordInsert("test__", "6\"'Perry'", "6\"'Perry'\"2017-02-12");
     //recordDelete("test__", "2\"'Jim'");
-    /*ArrayList<ArrayList<String>> test = tableMaker("testtest__reference");
+    ArrayList<ArrayList<String>> test = tableMaker("test");
     for (int i = 0; i != test.size(); i++) {
       ArrayList<String> row = test.get(i);
       for (int j = 0; j != row.size(); j++) {
         System.out.print(row.get(j) + "|");
       }
       System.out.println(" ");
-    }*/
+    }
     /*ArrayList<Integer> test2 = tableValueFinder(test, "created_date", "2015-12-12");
     System.out.println(test2.size());
     System.out.println(test2.get(0));*/
@@ -1496,8 +1551,7 @@ void queryList() :		//query list consists of queries ended with semicolon
           System.out.println("a\"b\"'c'\"\"d".split("\"\"")[1]);
           System.out.println("abc".contains("bc"));
           System.out.println(Character.isDigit("123".charAt(0)));*/
-          //deleteHandler(q.substring(1, q.length()));
-          System.out.println("hello+world+!".substring(0, "hello+world+!".length()));
+          deleteHandler(q.substring(1, q.length()));
           break;
       }
       System.out.print("DB_2015-16535> ");
