@@ -857,6 +857,13 @@ public class SimpleDBMSParser implements SimpleDBMSParserConstants {
       }
     }
 
+    for (int i = 0; i != tableNameList.size(); i++) {
+      if (tableList.get(tableNameList.get(i)).size() == 2) {
+        System.out.println("Table '" + tableNameList.get(i) + "' has no record");
+        return;
+      }
+    }
+
     if (querySlice[0].equals("*")) {
       columnList.add("*");
     }
@@ -931,7 +938,7 @@ public class SimpleDBMSParser implements SimpleDBMSParserConstants {
     }
 
         //test
-    for (int i = 0; i != tableNameList.size(); i++) {
+    /*for (int i = 0; i != tableNameList.size(); i++) {
       System.out.print(tableNameList.get(i) + "/");
     }
     System.out.println("");
@@ -942,7 +949,7 @@ public class SimpleDBMSParser implements SimpleDBMSParserConstants {
     for (int i = 0; i != asNameList.size(); i++) {
       System.out.print(asNameList.get(i) + ":" + asNameTranslate.get(asNameList.get(i)) + "    ");
     }
-    System.out.println("");
+    System.out.println("");*/
         //test
 
         if (querySlice.length == 3) {
@@ -1002,6 +1009,7 @@ public class SimpleDBMSParser implements SimpleDBMSParserConstants {
               indexPair.add(i);
               indexPair.add(tableIndex);
               indexPair.add(columnIndex);
+              whereClausePostfixColumnIndexList.add(indexPair);
             }
             else if (isCompOperator(op) && !op.equals("is")) {
               String leftOperand = whereClausePostfixList.get(i - 2);
@@ -1032,12 +1040,125 @@ public class SimpleDBMSParser implements SimpleDBMSParserConstants {
           }
 
           //test
-          for (int i = 0; i != whereClausePostfixList.size(); i++) {
-            System.out.print(whereClausePostfixList.get(i) + "  ");
-          }
-          System.out.println("");
+          /*for (int i = 0; i != whereClausePostfixList.size(); i++) {
+	    System.out.print(whereClausePostfixList.get(i) + "  ");
+	  }
+	  System.out.println("");*/
           //test
         }
+
+        int[] recordNums = new int[tableNameList.size()];
+        for (int i = 0; i != tableNameList.size(); i++) {
+          recordNums[i] = tableList.get(tableNameList.get(i)).size() - 2;
+        }
+        int[][] recordIndex = generateCombinations(recordNums);
+
+        ArrayList<ArrayList<String>> printResult = new ArrayList<ArrayList<String>>();
+        ArrayList<ArrayList<Integer>> targetTableColumn = new ArrayList<ArrayList<Integer>>();
+        if (!columnList.get(0).equals("*")) {
+          for (int i = 0; i != columnList.size(); i++) {
+            String[] temp;
+            if (columnList.get(i).contains("/")) {
+              temp = columnList.get(i).split("/");
+            }
+            else {
+              temp = asNameTranslate.get(columnList.get(i)).split("/");
+            }
+            int targetTable = tableNameList.indexOf(temp[0]);
+            int targetColumn = tableList.get(temp[0]).get(0).indexOf(temp[1]);
+            targetTableColumn.add(new ArrayList<Integer>(Arrays.asList(new Integer[]{ targetTable, targetColumn })));
+          }
+        }
+
+        for (int i = 0; i != recordIndex.length; i++) {
+          ArrayList<ArrayList<String>> recordList = new ArrayList<ArrayList<String>>();
+          for (int j = 0; j != recordIndex[i].length; j++) {
+            recordList.add(tableList.get(tableNameList.get(j)).get(recordIndex[i][j] + 2));
+          }
+
+          boolean whereClauseResult;
+          if (whereClausePostfixList == null) {
+            whereClauseResult = true;
+          }
+          else {
+            ArrayList<String> whereClauseExpression = (ArrayList<String>) whereClausePostfixList.clone();
+        for (int j = 0; j != whereClausePostfixColumnIndexList.size(); j++) {
+          ArrayList<Integer> expColPair = whereClausePostfixColumnIndexList.get(j);
+          int expIndex = expColPair.get(0);
+          int tabIndex = expColPair.get(1);
+          int colIndex = expColPair.get(2);
+          whereClauseExpression.set(expIndex, recordList.get(tabIndex).get(colIndex));
+        }
+        whereClauseResult = postfixCalculator(whereClauseExpression);
+          }
+
+          if (whereClauseResult) {
+            ArrayList<String> resultElement = new ArrayList<String>();
+            if (targetTableColumn.size() == 0) {
+              for (int j = 0; j != recordList.size(); j++) {
+                for (int k = 0; k != recordList.get(j).size() - 1; k++) {
+                  resultElement.add(recordList.get(j).get(k));
+                }
+              }
+              printResult.add(resultElement);
+            }
+            else {
+              for (int j = 0; j != targetTableColumn.size(); j++) {
+                ArrayList<Integer> tabCol = targetTableColumn.get(j);
+                resultElement.add(recordList.get(tabCol.get(0)).get(tabCol.get(1)));
+              }
+              printResult.add(resultElement);
+            }
+          }
+        }
+
+        if (!columnList.get(0).equals("*")) {
+          for (int i = 0; i != columnList.size(); i++) {
+            if (columnList.get(i).contains("/")) {
+              columnList.set(i, columnList.get(i).split("/")[1].toUpperCase());
+            }
+            else {
+              columnList.set(i, columnList.get(i).toUpperCase());
+            }
+          }
+        }
+        else {
+          columnList.clear();
+          for (int i = 0; i != tableNameList.size(); i++) {
+            ArrayList<String> col = tableList.get(tableNameList.get(i)).get(0);
+            for (int j = 0; j != col.size(); j++) {
+              columnList.add(col.get(j).toUpperCase());
+            }
+          }
+        }
+
+        String tableLine = "+";
+        for (int i = 0; i != columnList.size(); i++) {
+          for (int j = 0; j != columnList.get(i).length() + 2; j++) {
+            tableLine += "-";
+          }
+          tableLine += "+";
+        }
+        System.out.println(tableLine);
+        System.out.print("| ");
+        for (int i = 0; i != columnList.size(); i++) {
+          System.out.print(columnList.get(i) + " | ");
+        }
+        System.out.println("");
+        System.out.println(tableLine);
+        for (int i = 0; i != printResult.size(); i++) {
+          System.out.print("| ");
+          for (int j = 0; j != columnList.size(); j++) {
+            String temp = printResult.get(i).get(j);
+            String space = "";
+            for (int k = 0; k < columnList.get(j).length() - temp.length(); k++) {
+              space += " ";
+            }
+            System.out.print(temp + space + " | ");
+          }
+          System.out.println("");
+        }
+        System.out.println(tableLine);
 
   }
 
@@ -1769,7 +1890,7 @@ public class SimpleDBMSParser implements SimpleDBMSParserConstants {
           System.out.println("abc".contains("bc"));
           System.out.println(Character.isDigit("123".charAt(0)));*/
           //deleteHandler(q.substring(1, q.length()));
-          int[][] testing = generateCombinations(new int[] { 2, 5 });
+          int[][] testing = generateCombinations(new int[] { 5 });
           for (int i = 0; i != testing.length; i++) {
             for (int j = 0; j != testing[i].length; j++) {
               System.out.print(testing[i][j]);
