@@ -349,7 +349,12 @@ public class SimpleDBMSParser implements SimpleDBMSParserConstants {
 
         for (int i = 0; i != attributeList.size(); i++) {
           String temp = attributeList.get(i);
-          dbPut(tableName + "/" + temp, attributeMetaData.get(temp));
+          String attrMeta = attributeMetaData.get(temp);
+          if (primaryKeyDefCount == 0) {
+            String[] oldMetaList = attrMeta.split(",");
+            attrMeta = oldMetaList[0] + ",N,P," + oldMetaList[3] + "," + oldMetaList[4] + "," + oldMetaList[5] + "," + oldMetaList[6];
+          }
+          dbPut(tableName + "/" + temp, attrMeta);
         }
 
         dbPut(tableName + "\u005c"\u005c"_head_", "_none_");              //record pointer
@@ -498,47 +503,47 @@ public class SimpleDBMSParser implements SimpleDBMSParserConstants {
     return;
   }
 
-  public static void insertHandler(String query) {
+  public static void insertHandler(String query) {              //function for "insert" query.
     String[] querySlice = query.split("\u005c"\u005c"");
 
     String tableName = querySlice[0];
-    if (dbGet(tableName) == null) {
+    if (dbGet(tableName) == null) {                             //if there is no table, return.
       System.out.println("No such table");
       return;
     }
-    ArrayList<ArrayList<String>> table = tableMaker(tableName);
+    ArrayList<ArrayList<String>> table = tableMaker(tableName);         //make table where record will be inserted.
     ArrayList<String> tableColumnList = table.get(0);
     ArrayList<String> tableColumnMetaDataList = table.get(1);
 
     String[] valueList = querySlice[querySlice.length - 1].split("\u005c"");
-    if (valueList.length != tableColumnList.size()) {
+    if (valueList.length != tableColumnList.size()) {                                           //if the number of elements of tuple doesn't match, return.
       System.out.println("Insertion has failed: Types are not matched");
       return;
     }
 
-    ArrayList<String> primaryKeyValueList = new ArrayList<String>();
-    ArrayList<String> referenceTableNameList = new ArrayList<String>();
+    ArrayList<String> primaryKeyValueList = new ArrayList<String>();            //to check primary key constraint.
+    ArrayList<String> referenceTableNameList = new ArrayList<String>();         //to check referential integrity constraint.
         HashMap<String, ArrayList<ArrayList<String>>> referenceTableList = new HashMap<String, ArrayList<ArrayList<String>>>();
 
-    if (querySlice.length == 4) {
+    if (querySlice.length == 4) {               //if query has column list, this block will analyze it.
       String[] insertColumnList = querySlice[1].split(",");
       ArrayList<String> duplicateCheck = new ArrayList<String>();
       for (int i = 0; i != insertColumnList.length; i++) {
-        if (!tableColumnList.contains(insertColumnList[i])) {
+        if (!tableColumnList.contains(insertColumnList[i])) {           //if there is a non-existing column, return.
           System.out.println("Insertion has failed: \u005c'" + insertColumnList[i] + "\u005c' does not exist");
           return;
         }
         if (duplicateCheck.contains(insertColumnList[i])) {
-          System.out.println("Insertion has failed: Column name duplication");          //if column name is duplicated, return
+          System.out.println("Insertion has failed: Column name duplication");          //if column name is duplicated, return.
           return;
         }
         duplicateCheck.add(insertColumnList[i]);
       }
-      if (tableColumnList.size() != insertColumnList.length) {
+      if (tableColumnList.size() != insertColumnList.length) {                  //if the number of elements of column list doesn't match, return.
         System.out.println("Insertion has failed: Types are not matched");
         return;
       }
-      ArrayList<String> correctOrder = new ArrayList<String>(Arrays.asList(valueList));
+      ArrayList<String> correctOrder = new ArrayList<String>(Arrays.asList(valueList));         //this part will correct the order of tuple values.
       for (int i = 0; i != insertColumnList.length; i++) {
         for (int j = 0; j != tableColumnList.size(); j++) {
           if (insertColumnList[i].equals(tableColumnList.get(j))) {
@@ -548,43 +553,43 @@ public class SimpleDBMSParser implements SimpleDBMSParserConstants {
       }
     }
 
-    for (int i = 0; i != valueList.length; i++) {
+    for (int i = 0; i != valueList.length; i++) {               //check values to be inserted.
       String[] metaDataList = tableColumnMetaDataList.get(i).split(",");
       if (isNull(valueList[i])) {
-        if (metaDataList[1].equals("N")) {
+        if (metaDataList[1].equals("N")) {              //if null value is to be inserted into the column not nullable, return.
           System.out.println("Insertion has failed: \u005c'" + tableColumnList.get(i) + "\u005c' is not nullable");
           return;
         }
       }
       else {
-                  if (metaDataList[0].equals("int")) {
+                  if (metaDataList[0].equals("int")) {                  //int type check.
                     if (!isInt(valueList[i])) {
                       System.out.println("Insertion has failed: Types are not matched");
                       return;
                     }
                   }
-                  else if (metaDataList[0].equals("date")) {
+                  else if (metaDataList[0].equals("date")) {    //date type check.
                     if (!isDate(valueList[i])) {
                       System.out.println("Insertion has failed: Types are not matched");
                       return;
                     }
                   }
                   else {
-                    if (!isCharString(valueList[i])) {
+                    if (!isCharString(valueList[i])) {                  //char type check.
                       System.out.println("Insertion has failed: Types are not matched");
                       return;
                     }
-                    int charStringLimit = Integer.parseInt(metaDataList[0].substring(5, metaDataList[0].length() - 1));
+                    int charStringLimit = Integer.parseInt(metaDataList[0].substring(5, metaDataList[0].length() - 1));         //this part will truncate input string.
                     if (valueList[i].length() - 2 > charStringLimit) {
                       String truncatedValue = valueList[i].substring(1, valueList[i].length() - 1);
                       truncatedValue = truncatedValue.substring(0, charStringLimit);
                       valueList[i] = "\u005c'" + truncatedValue + "\u005c'";
                     }
                   }
-                  if (metaDataList[2].equals("P")) {
+                  if (metaDataList[2].equals("P")) {            //to check primary key constraint.
                     primaryKeyValueList.add(valueList[i]);
                   }
-                  if (metaDataList[3].equals("F")) {
+                  if (metaDataList[3].equals("F")) {            //to check referential integrity constraint.
                     String[] referenceTo = metaDataList[5].split("/");
                     String referenceTableName = referenceTo[0];
                     String referenceColumnName = referenceTo[1];
@@ -593,7 +598,7 @@ public class SimpleDBMSParser implements SimpleDBMSParserConstants {
                       referenceTableList.put(referenceTableName, tableMaker(referenceTableName));
                     }
                     ArrayList<Integer> fkConstraint = tableValueFinder(referenceTableList.get(referenceTableName), referenceColumnName, valueList[i]);
-                    if (fkConstraint == null) {
+                    if (fkConstraint == null) {                 //if referenced table doesn't contain the value to be inserted into foreign key column, return.
                       System.out.println("Insertion has failed: Referential integrity violation");
                       return;
                     }
@@ -601,22 +606,12 @@ public class SimpleDBMSParser implements SimpleDBMSParserConstants {
           }
     }
 
-    //test
-    //for (int i = 0; i != valueList.length; i++) System.out.println(valueList[i]);
-        //test
-
-    if (primaryKeyValueList.size() == 0) {                      //if there is no primary key constraints, combination of inserted values should be pk.
-      for (int i = 0; i != valueList.length; i++) {
-        primaryKeyValueList.add(valueList[i]);
-      }
-    }
-
     String primaryKeyValueString = primaryKeyValueList.get(0);
     for (int i = 1; i != primaryKeyValueList.size(); i++) {
       primaryKeyValueString += "\u005c"" + primaryKeyValueList.get(i);
     }
 
-    if (dbGet(tableName + "\u005c"\u005c"" + primaryKeyValueString) != null) {
+    if (dbGet(tableName + "\u005c"\u005c"" + primaryKeyValueString) != null) {            //if primary key is duplicated, return.
       System.out.println("Insertion has failed: Primary key duplication");
       return;
     }
@@ -626,15 +621,15 @@ public class SimpleDBMSParser implements SimpleDBMSParserConstants {
       valueString += "\u005c"" + valueList[i];
     }
 
-    recordInsert(tableName, primaryKeyValueString, valueString);
+    recordInsert(tableName, primaryKeyValueString, valueString);                //row is inserted.
     System.out.println("The row is inserted");
     return;
   }
 
-  public static void deleteHandler(String query) {
+  public static void deleteHandler(String query) {                      //function for "delete" query.
 
-    int deleteResultCount = 0;
-    int deletePassedCount = 0;
+    int deleteResultCount = 0;          //count the number of deleted records.
+    int deletePassedCount = 0;          //count the number of records not deleted due to referential integrity constraint.
 
     String tableName;
     ArrayList<ArrayList<String>> table;
@@ -644,72 +639,72 @@ public class SimpleDBMSParser implements SimpleDBMSParserConstants {
     ArrayList<String> whereClausePostfixList = null;
     ArrayList<ArrayList<Integer>> whereClausePostfixColumnIndexList = new ArrayList<ArrayList<Integer>>();
 
-    if (!query.contains("\u005c"\u005c"")) {
+    if (!query.contains("\u005c"\u005c"")) {                              //if query doesn't contain where-clause
       tableName = query;
-      if (dbGet(tableName) == null) {
+      if (dbGet(tableName) == null) {                   //if there is no table, return.
         System.out.println("No such table");
         return;
       }
     }
-    else {
+    else {              //if query contains where clause
       String[] querySlice = query.split("\u005c"\u005c"");
       tableName = querySlice[0];
-      if (dbGet(tableName) == null) {
+      if (dbGet(tableName) == null) {                   //if there is no table, return.
         System.out.println("No such table");
         return;
       }
-      whereClausePostfixList = whereClauseToPostfix(querySlice[2].split("\u005c""));
+      whereClausePostfixList = whereClauseToPostfix(querySlice[2].split("\u005c""));         //translate where-clause into postfix form.
     }
 
-    table = tableMaker(tableName);
+    table = tableMaker(tableName);                      //build table structure.
     tableColumnList = table.get(0);
     for (int i = 0; i != tableColumnList.size(); i++) {
       String attributeMetaData = table.get(1).get(i);
       tableColumnMetaDataList.add(new ArrayList<String>(Arrays.asList(attributeMetaData.split(","))));
     }
 
-    if (whereClausePostfixList != null) {
+    if (whereClausePostfixList != null) {               //if there is where-clause, verify it.
       for (int i = 0; i != whereClausePostfixList.size(); i++) {
         String op = whereClausePostfixList.get(i);
         if (isColumn(op)) {
           String whereColumn;
           if (op.contains(".")) {
             String[] tableColumn = op.split("\u005c\u005c.");
-            if (!tableName.equals(tableColumn[0])) {
+            if (!tableName.equals(tableColumn[0])) {            //if TABLE in { TABLE }.{ COLUMN } doesn't match with the table specified, return.
               System.out.println("Where clause try to reference tables which are not specified");
               return;
             }
             whereColumn = tableColumn[1];
-            whereClausePostfixList.set(i, whereColumn);
+            whereClausePostfixList.set(i, whereColumn);         //change the form { TABLE }.{ COLUMN } into { COLUMN }
           }
           else {
             whereColumn = op;
           }
-          int columnIdx = tableColumnList.indexOf(whereColumn);
+          int columnIdx = tableColumnList.indexOf(whereColumn);         //if COLUMN doesn't exist in the table, return.
           if (columnIdx == -1) {
             System.out.println("Where clause try to reference non existing column");
             return;
           }
-          ArrayList<Integer> indexPair = new ArrayList<Integer>();
+          ArrayList<Integer> indexPair = new ArrayList<Integer>();              //index pair to calculate where-clause with every record.
           indexPair.add(i);
           indexPair.add(columnIdx);
           whereClausePostfixColumnIndexList.add(indexPair);
         }
-        else if (isCompOperator(op) && !op.equals("is")) {
+        else if (isCompOperator(op) && !op.equals("is")) {                      //type check between comparable operands.
           String leftOperand = whereClausePostfixList.get(i - 2);
           String rightOperand = whereClausePostfixList.get(i - 1);
           String leftOperandType;
           String rightOperandType;
-          if (isColumn(leftOperand)) {
+          if (isColumn(leftOperand)) {          //if left operand is column, retrieve the type of the column.
             int leftOperandIndex = tableColumnList.indexOf(leftOperand);
             leftOperandType = tableColumnMetaDataList.get(leftOperandIndex).get(0);
           }
-          else {
+          else {                //if left operand is constant
             if (isInt(leftOperand)) leftOperandType = "int";
             else if (isDate(leftOperand)) leftOperandType = "date";
             else leftOperandType = "char";
           }
-          if (isColumn(rightOperand)) {
+          if (isColumn(rightOperand)) {         //same with left operand.
             int rightOperandIndex = tableColumnList.indexOf(rightOperand);
             rightOperandType = tableColumnMetaDataList.get(rightOperandIndex).get(0);
           }
@@ -718,7 +713,7 @@ public class SimpleDBMSParser implements SimpleDBMSParserConstants {
             else if (isDate(rightOperand)) rightOperandType = "date";
             else rightOperandType = "char";
           }
-          if (!leftOperandType.substring(0, 2).equals(rightOperandType.substring(0, 2))) {
+          if (!leftOperandType.substring(0, 2).equals(rightOperandType.substring(0, 2))) {              //if types are different, return.
             System.out.println("Where clause try to compare incomparable values");
             return;
           }
@@ -726,24 +721,24 @@ public class SimpleDBMSParser implements SimpleDBMSParserConstants {
       }
     }
 
-    for (int i = 2; i != table.size(); i++) {
+    for (int i = 2; i != table.size(); i++) {           //this block will delete appropriate records.
       ArrayList<String> record = table.get(i);
       boolean whereClauseResult;
-      if (whereClausePostfixList == null) {
+      if (whereClausePostfixList == null) {             //if there is no where-clause
         whereClauseResult = true;
       }
-      else {
+      else {            //if there is where-clause
         ArrayList<String> whereClauseExpression = (ArrayList<String>) whereClausePostfixList.clone();
-        for (int j = 0; j != whereClausePostfixColumnIndexList.size(); j++) {
+        for (int j = 0; j != whereClausePostfixColumnIndexList.size(); j++) {           //insert record value into where-clause postfix.
           ArrayList<Integer> expColPair = whereClausePostfixColumnIndexList.get(j);
           int expIndex = expColPair.get(0);
           int colIndex = expColPair.get(1);
           whereClauseExpression.set(expIndex, record.get(colIndex));
         }
-        whereClauseResult = postfixCalculator(whereClauseExpression);
+        whereClauseResult = postfixCalculator(whereClauseExpression);   //calculate postfix.
       }
 
-      if (whereClauseResult) {
+      if (whereClauseResult) {          //if condition is right, check referential integrity constraint.
         boolean deletable = true;
         ArrayList<ArrayList<String>> referenceList = new ArrayList<ArrayList<String>>();
         for (int j = 0; j != tableColumnMetaDataList.size(); j++) {
@@ -752,7 +747,7 @@ public class SimpleDBMSParser implements SimpleDBMSParserConstants {
             referenceElement.add(tableColumnMetaDataList.get(j).get(6));
             referenceElement.add(record.get(j));
             boolean deletableTestResult = referencedRecordDeletable(referenceElement.get(0), referenceElement.get(1));
-            if (!deletableTestResult) {
+            if (!deletableTestResult) {         //if not nullable column references this value, it shouldn't be deleted.
               deletable = false;
             }
             else {
@@ -760,7 +755,7 @@ public class SimpleDBMSParser implements SimpleDBMSParserConstants {
             }
           }
         }
-        if (deletable) {
+        if (deletable) {                //if all things are okay, delete the record.
           deleteResultCount++;
           recordDelete(tableName, record.get(record.size() - 1));
           for (int j = 0; j != referenceList.size(); j++) {
@@ -773,13 +768,13 @@ public class SimpleDBMSParser implements SimpleDBMSParserConstants {
       }
     }
 
-    System.out.println(String.valueOf(deleteResultCount) + " row(s) are deleted");
+    System.out.println(String.valueOf(deleteResultCount) + " row(s) are deleted");              //final results.
     if (deletePassedCount != 0) {
       System.out.println(String.valueOf(deletePassedCount) + " row(s) are not deleted due to referential integrity");
     }
   }
 
-  public static void selectHandler(String query) {
+  public static void selectHandler(String query) {              //function for "select" query.
 
     String[] querySlice = query.split("\u005c"\u005c"\u005c"");
 
@@ -795,16 +790,16 @@ public class SimpleDBMSParser implements SimpleDBMSParserConstants {
         ArrayList<ArrayList<Integer>> whereClausePostfixColumnIndexList = new ArrayList<ArrayList<Integer>>();
 
 
-    if (querySlice[1].contains("\u005c"\u005c"")) {
+    if (querySlice[1].contains("\u005c"\u005c"")) {               //if there are more than two tables,
       String[] tableNames = querySlice[1].split("\u005c"\u005c"");
-      for (int i = 0; i != tableNames.length; i++) {
-        if (tableNames[i].contains("\u005c"")) {
+      for (int i = 0; i != tableNames.length; i++) {    //check every table.
+        if (tableNames[i].contains("\u005c"")) {             //if there is renaming option,
           String[] referedTable = tableNames[i].split("\u005c"");
-          if (dbGet(referedTable[0]) == null) {
+          if (dbGet(referedTable[0]) == null) {                 //if there is no table, return.
                 System.out.println("Selection has failed: \u005c'" + referedTable[0] + "\u005c' does not exist");
                 return;
               }
-              if (asNameList.contains(referedTable[1]) || tableNameList.contains(referedTable[1])) {
+              if (asNameList.contains(referedTable[1]) || tableNameList.contains(referedTable[1])) {            //if renamed identifier is not unique, return.
                 System.out.println("Selection has failed: identifier \u005c'" + referedTable[1] + "\u005c' is duplicated");
                 return;
               }
@@ -813,7 +808,7 @@ public class SimpleDBMSParser implements SimpleDBMSParserConstants {
               asNameList.add(referedTable[1]);
               asNameTranslate.put(referedTable[1], referedTable[0]);
         }
-        else {
+        else {          //if there is no renaming option, do same process with above.
           if (dbGet(tableNames[i]) == null) {
                 System.out.println("Selection has failed: \u005c'" + tableNames[i] + "\u005c' does not exist");
                 return;
@@ -827,7 +822,7 @@ public class SimpleDBMSParser implements SimpleDBMSParserConstants {
         }
       }
     }
-    else {
+    else {              //if there is one table, do same process with above.
       if (querySlice[1].contains("\u005c"")) {
         String[] referedTable = querySlice[1].split("\u005c"");
         if (dbGet(referedTable[0]) == null) {
@@ -857,7 +852,7 @@ public class SimpleDBMSParser implements SimpleDBMSParserConstants {
       }
     }
 
-    for (int i = 0; i != tableNameList.size(); i++) {
+    for (int i = 0; i != tableNameList.size(); i++) {           //if there is a table with no records, return.
       if (tableList.get(tableNameList.get(i)).size() == 2) {
         System.out.println("Table '" + tableNameList.get(i) + "' has no record");
         return;
@@ -867,45 +862,45 @@ public class SimpleDBMSParser implements SimpleDBMSParserConstants {
     if (querySlice[0].equals("*")) {
       columnList.add("*");
     }
-    else {
+    else {              //if exact columns are specified,
       ArrayList<String> columnNames;
-      if (querySlice[0].contains("\u005c"\u005c"")) {
+      if (querySlice[0].contains("\u005c"\u005c"")) {             //if there are more than two columns,
         columnNames = new ArrayList<String>(Arrays.asList(querySlice[0].split("\u005c"\u005c"")));
       }
-      else {
+      else {    //if there is one column,
         columnNames = new ArrayList<String>();
         columnNames.add(querySlice[0]);
       }
-      for (int i = 0; i != columnNames.size(); i++) {
+      for (int i = 0; i != columnNames.size(); i++) {           //check every column.
         ArrayList<String> referedColumn = new ArrayList<String>();
         referedColumn.add(null);referedColumn.add(null);referedColumn.add(null);
         String col;
-        if (columnNames.get(i).contains("\u005c"")) {
+        if (columnNames.get(i).contains("\u005c"")) {        //if there is renaming option,
           String[] colSlice = columnNames.get(i).split("\u005c"");
-          if (asNameList.contains(colSlice[1])) {
+          if (asNameList.contains(colSlice[1])) {       //if renamed identifier is not unique, return.
                 System.out.println("Selection has failed: identifier \u005c'" + colSlice[1] + "\u005c' is duplicated");
                 return;
               }
               referedColumn.set(2, colSlice[1]);
               col = colSlice[0];
         }
-        else {
+        else {          //if there is no renaming option,
           col = columnNames.get(i);
         }
-        if (col.contains("/")) {
+        if (col.contains("/")) {        //if table is specified,
           String[] colSlice = col.split("/");
-          if (!tableNameList.contains(colSlice[0])) {
+          if (!tableNameList.contains(colSlice[0])) {           //if table doesn't exist, return.
             System.out.println("Selection has failed: fail to resolve '" + colSlice[1] + "'");
             return;
           }
-          if (!tableList.get(colSlice[0]).get(0).contains(colSlice[1])) {
+          if (!tableList.get(colSlice[0]).get(0).contains(colSlice[1])) {               //if column doesn't exist, return.
             System.out.println("Selection has failed: fail to resolve '" + colSlice[1] + "'");
             return;
           }
           referedColumn.set(0, colSlice[0]);
           referedColumn.set(1, colSlice[1]);
         }
-        else {
+        else {          //if table is not specified,
           String whichTable = "";
           int howMany = 0;
           for (int j = 0; j != tableNameList.size(); j++) {
@@ -914,7 +909,7 @@ public class SimpleDBMSParser implements SimpleDBMSParserConstants {
               howMany++;
             }
           }
-          if (howMany != 1) {
+          if (howMany != 1) {           //if table cannot be specified, return.
             System.out.println("Selection has failed: fail to resolve '" + col + "'");
             return;
           }
@@ -926,7 +921,7 @@ public class SimpleDBMSParser implements SimpleDBMSParserConstants {
           System.out.println("Selection has failed: fail to resolve '" + referedColumn.get(1) + "'");
           return;
         }
-        if (referedColumn.get(2) == null) {
+        if (referedColumn.get(2) == null) {             //if there is no renaming option, just put.
           columnList.add(finalColumnName);
         }
         else {
@@ -937,52 +932,37 @@ public class SimpleDBMSParser implements SimpleDBMSParserConstants {
       }
     }
 
-        //test
-    /*for (int i = 0; i != tableNameList.size(); i++) {
-      System.out.print(tableNameList.get(i) + "/");
-    }
-    System.out.println("");
-    for (int i = 0; i != columnList.size(); i++) {
-      System.out.print(columnList.get(i) + "    ");
-    }
-    System.out.println("");
-    for (int i = 0; i != asNameList.size(); i++) {
-      System.out.print(asNameList.get(i) + ":" + asNameTranslate.get(asNameList.get(i)) + "    ");
-    }
-    System.out.println("");*/
-        //test
-
-        if (querySlice.length == 3) {
-          whereClausePostfixList = whereClauseToPostfix(querySlice[2].split("\u005c"\u005c"")[1].split("\u005c""));
-          for (int i = 0; i != whereClausePostfixList.size(); i++) {
+        if (querySlice.length == 3) {           //if there is where-clause,
+          whereClausePostfixList = whereClauseToPostfix(querySlice[2].split("\u005c"\u005c"")[1].split("\u005c""));    //translate where-clause into postfix form.
+          for (int i = 0; i != whereClausePostfixList.size(); i++) {    //verify where-clause.
             String op = whereClausePostfixList.get(i);
-            if (isColumn(op)) {
+            if (isColumn(op)) {         //if there is column operand,
               String whereTable = "", whereColumn = "";
               int tableIndex = -1, columnIndex = -1;
-              if (op.contains(".")) {
+              if (op.contains(".")) {           //if it has { TABLE }.{ COLUMN } form,
                 String[] tableColumn = op.split("\u005c\u005c.");
                 tableIndex = tableNameList.indexOf(tableColumn[0]);
-                if (tableIndex == -1) {
+                if (tableIndex == -1) {         //if there is no table, return.
                   System.out.println("Where clause try to reference tables which are not specified");
               return;
                 }
                 whereTable = tableColumn[0];
                 whereColumn = tableColumn[1];
                 columnIndex = tableList.get(whereTable).get(0).indexOf(whereColumn);
-                if (columnIndex == -1) {
+                if (columnIndex == -1) {                //if there is no column, return.
                   System.out.println("Where clause try to reference non existing column");
               return;
                 }
               }
-              else {
-                if (columnList.contains(op)) {
+              else {            //if it has { COLUMN } form,
+                if (columnList.contains(op)) {          //if it is renamed identifier,
                   String[] tableColumn = asNameTranslate.get(op).split("/");
                   whereTable = tableColumn[0];
                   whereColumn = tableColumn[1];
                   tableIndex = tableNameList.indexOf(whereTable);
                   columnIndex = tableList.get(whereTable).get(0).indexOf(whereColumn);
                 }
-                else {
+                else {          //if it is not renamed identifier,
                   int howMany = 0;
                   for (int j = 0; j != tableNameList.size(); j++) {
                     int colTest = tableList.get(tableNameList.get(j)).get(0).indexOf(op);
@@ -994,37 +974,37 @@ public class SimpleDBMSParser implements SimpleDBMSParserConstants {
                       whereColumn = op;
                     }
                   }
-                  if (howMany == 0) {
+                  if (howMany == 0) {           //if nothing matched, return.
                     System.out.println("Where clause try to reference non existing column");
                 return;
                   }
-                  if (howMany > 1) {
+                  if (howMany > 1) {            //if more than one column is matched, return.
                     System.out.println("Where clause contains ambiguous reference");
                     return;
                   }
                 }
               }
               whereClausePostfixList.set(i, whereTable + "/" + whereColumn);
-              ArrayList<Integer> indexPair = new ArrayList<Integer>();
+              ArrayList<Integer> indexPair = new ArrayList<Integer>();          //index pair to calculate where-clause with every record.
               indexPair.add(i);
               indexPair.add(tableIndex);
               indexPair.add(columnIndex);
               whereClausePostfixColumnIndexList.add(indexPair);
             }
-            else if (isCompOperator(op) && !op.equals("is")) {
+            else if (isCompOperator(op) && !op.equals("is")) {          //type check between two comparable operands.
               String leftOperand = whereClausePostfixList.get(i - 2);
           String rightOperand = whereClausePostfixList.get(i - 1);
           String leftOperandType;
           String rightOperandType;
-          if (isInt(leftOperand)) leftOperandType = "int";
+          if (isInt(leftOperand)) leftOperandType = "int";                      //if it is constant operand,
           else if (isDate(leftOperand)) leftOperandType = "date";
           else if (isCharString(leftOperand)) leftOperandType = "char";
-          else {
+          else {                //if it is column operand,
             String[] leftOperandSlice = leftOperand.split("/");
             int leftOperandIndex = tableList.get(leftOperandSlice[0]).get(0).indexOf(leftOperandSlice[1]);
             leftOperandType = tableList.get(leftOperandSlice[0]).get(1).get(leftOperandIndex).split(",")[0];
           }
-          if (isInt(rightOperand)) rightOperandType = "int";
+          if (isInt(rightOperand)) rightOperandType = "int";            //same with left operand.
           else if (isDate(rightOperand)) rightOperandType = "date";
           else if (isCharString(rightOperand)) rightOperandType = "char";
           else {
@@ -1032,29 +1012,22 @@ public class SimpleDBMSParser implements SimpleDBMSParserConstants {
             int rightOperandIndex = tableList.get(rightOperandSlice[0]).get(0).indexOf(rightOperandSlice[1]);
             rightOperandType = tableList.get(rightOperandSlice[0]).get(1).get(rightOperandIndex).split(",")[0];
           }
-          if (!leftOperandType.substring(0, 2).equals(rightOperandType.substring(0, 2))) {
+          if (!leftOperandType.substring(0, 2).equals(rightOperandType.substring(0, 2))) {              //if types are not matched, return.
             System.out.println("Where clause try to compare incomparable values");
             return;
           }
             }
           }
-
-          //test
-          /*for (int i = 0; i != whereClausePostfixList.size(); i++) {
-	    System.out.print(whereClausePostfixList.get(i) + "  ");
-	  }
-	  System.out.println("");*/
-          //test
         }
 
-        int[] recordNums = new int[tableNameList.size()];
+        int[] recordNums = new int[tableNameList.size()];               //this part will make record index pairs for where-clause calculation.
         for (int i = 0; i != tableNameList.size(); i++) {
           recordNums[i] = tableList.get(tableNameList.get(i)).size() - 2;
         }
         int[][] recordIndex = generateCombinations(recordNums);
 
         ArrayList<ArrayList<String>> printResult = new ArrayList<ArrayList<String>>();
-        ArrayList<ArrayList<Integer>> targetTableColumn = new ArrayList<ArrayList<Integer>>();
+        ArrayList<ArrayList<Integer>> targetTableColumn = new ArrayList<ArrayList<Integer>>();          //this part will make column index pairs for printing result.
         if (!columnList.get(0).equals("*")) {
           for (int i = 0; i != columnList.size(); i++) {
             String[] temp;
@@ -1070,7 +1043,7 @@ public class SimpleDBMSParser implements SimpleDBMSParserConstants {
           }
         }
 
-        for (int i = 0; i != recordIndex.length; i++) {
+        for (int i = 0; i != recordIndex.length; i++) {         //analyze every possible record combinations.
           ArrayList<ArrayList<String>> recordList = new ArrayList<ArrayList<String>>();
           for (int j = 0; j != recordIndex[i].length; j++) {
             recordList.add(tableList.get(tableNameList.get(j)).get(recordIndex[i][j] + 2));
@@ -1080,21 +1053,21 @@ public class SimpleDBMSParser implements SimpleDBMSParserConstants {
           if (whereClausePostfixList == null) {
             whereClauseResult = true;
           }
-          else {
+          else {                //if there is where-clause,
             ArrayList<String> whereClauseExpression = (ArrayList<String>) whereClausePostfixList.clone();
-        for (int j = 0; j != whereClausePostfixColumnIndexList.size(); j++) {
+        for (int j = 0; j != whereClausePostfixColumnIndexList.size(); j++) {           //insert record value into where-clause postfix.
           ArrayList<Integer> expColPair = whereClausePostfixColumnIndexList.get(j);
           int expIndex = expColPair.get(0);
           int tabIndex = expColPair.get(1);
           int colIndex = expColPair.get(2);
           whereClauseExpression.set(expIndex, recordList.get(tabIndex).get(colIndex));
         }
-        whereClauseResult = postfixCalculator(whereClauseExpression);
+        whereClauseResult = postfixCalculator(whereClauseExpression);           //calculate postfix.
           }
 
-          if (whereClauseResult) {
+          if (whereClauseResult) {              //if the record combination satisfied the condition,
             ArrayList<String> resultElement = new ArrayList<String>();
-            if (targetTableColumn.size() == 0) {
+            if (targetTableColumn.size() == 0) {                //if columns are not specified, add every column values to result list.
               for (int j = 0; j != recordList.size(); j++) {
                 for (int k = 0; k != recordList.get(j).size() - 1; k++) {
                   resultElement.add(recordList.get(j).get(k));
@@ -1102,7 +1075,7 @@ public class SimpleDBMSParser implements SimpleDBMSParserConstants {
               }
               printResult.add(resultElement);
             }
-            else {
+            else {              //if columns are specified, add specific column values to result list.
               for (int j = 0; j != targetTableColumn.size(); j++) {
                 ArrayList<Integer> tabCol = targetTableColumn.get(j);
                 resultElement.add(recordList.get(tabCol.get(0)).get(tabCol.get(1)));
@@ -1112,7 +1085,7 @@ public class SimpleDBMSParser implements SimpleDBMSParserConstants {
           }
         }
 
-        if (!columnList.get(0).equals("*")) {
+        if (!columnList.get(0).equals("*")) {           //if columns are specified, reform them into print form.
           for (int i = 0; i != columnList.size(); i++) {
             if (columnList.get(i).contains("/")) {
               columnList.set(i, columnList.get(i).split("/")[1].toUpperCase());
@@ -1122,7 +1095,7 @@ public class SimpleDBMSParser implements SimpleDBMSParserConstants {
             }
           }
         }
-        else {
+        else {          //if asterisk is used, add every column name.
           columnList.clear();
           for (int i = 0; i != tableNameList.size(); i++) {
             ArrayList<String> col = tableList.get(tableNameList.get(i)).get(0);
@@ -1132,7 +1105,7 @@ public class SimpleDBMSParser implements SimpleDBMSParserConstants {
           }
         }
 
-        String tableLine = "+";
+        String tableLine = "+";         //this part is for printing result.
         for (int i = 0; i != columnList.size(); i++) {
           for (int j = 0; j != columnList.get(i).length() + 2; j++) {
             tableLine += "-";
@@ -1150,6 +1123,7 @@ public class SimpleDBMSParser implements SimpleDBMSParserConstants {
           System.out.print("| ");
           for (int j = 0; j != columnList.size(); j++) {
             String temp = printResult.get(i).get(j);
+            if (isCharString(temp)) temp = temp.substring(1, temp.length() - 1);
             String space = "";
             for (int k = 0; k < columnList.get(j).length() - temp.length(); k++) {
               space += " ";
@@ -1162,34 +1136,7 @@ public class SimpleDBMSParser implements SimpleDBMSParserConstants {
 
   }
 
-  public static void deleteHandlerTesting() {
-    /*System.out.println(query);
-    String[] whereClauseList = query.split("\"\"")[2].split("\"");
-    ArrayList<String> whereClausePostfixList = whereClauseToPostfix(whereClauseList);
-    for (int i = 0; i != whereClausePostfixList.size(); i++) {
-      System.out.print(whereClausePostfixList.get(i) + "/");
-    }
-    System.out.println(" ");
-    String[] calTest = { "null", "'perry'", "=", "'1234'", "null", "=", "2015-01-01", "null", "is", "or", "and", "not" };
-    ArrayList<String> calTest_ = new ArrayList<String>(Arrays.asList(calTest));
-    System.out.println(postfixCalculator(calTest_));*/
-    //recordInsert("test__", "6\"'Perry'", "6\"'Perry'\"2017-02-12");
-    //recordDelete("test__", "2\"'Jim'");
-    ArrayList<ArrayList<String>> test = tableMaker("test");
-    for (int i = 0; i != test.size(); i++) {
-      ArrayList<String> row = test.get(i);
-      for (int j = 0; j != row.size(); j++) {
-        System.out.print(row.get(j) + "|");
-      }
-      System.out.println(" ");
-    }
-    /*ArrayList<Integer> test2 = tableValueFinder(test, "created_date", "2015-12-12");
-    System.out.println(test2.size());
-    System.out.println(test2.get(0));*/
-        //System.out.println("'hello'".substring(1, 6));
-        //System.out.println("2015-12-12".compareTo("2016-01-01"));
-  }
-
+  //miscellaneous private functions
   private static boolean isBoolean(String operand) {
     return (operand.equals("_true_") || operand.equals("_false_") || operand.equals("_unknown_"));
   }
@@ -1212,7 +1159,7 @@ public class SimpleDBMSParser implements SimpleDBMSParserConstants {
     return (operand.equals("null") || operand.equals("notnull"));
   }
 
-  private static int operatorOrder(String operator) {
+  private static int operatorOrder(String operator) {           //function for whereClauseToPostfix.
     if (operator.equals("(") || operator.equals(")")) return 4;
     if (operator.equals("not")) return 2;
     if (operator.equals("and")) return 1;
@@ -1243,7 +1190,7 @@ public class SimpleDBMSParser implements SimpleDBMSParserConstants {
     return true;
   }
 
-  private static ArrayList<String> whereClauseToPostfix(String[] whereList) {
+  private static ArrayList<String> whereClauseToPostfix(String[] whereList) {           //function to translate where-clause into postfix form.
     ArrayList<String> result = new ArrayList<String>();
     ArrayList<String> stack = new ArrayList<String>();
     for (int i = 0; i != whereList.length; i++) {
@@ -1277,7 +1224,7 @@ public class SimpleDBMSParser implements SimpleDBMSParserConstants {
     return result;
   }
 
-  private static boolean postfixCalculator(ArrayList<String> whereClausePostfixList) {
+  private static boolean postfixCalculator(ArrayList<String> whereClausePostfixList) {          //function to calculate postfix.
     ArrayList<String> operands = new ArrayList<String>();
     for (int i = 0; i != whereClausePostfixList.size(); i++) {
       String op = whereClausePostfixList.get(i);
@@ -1285,16 +1232,16 @@ public class SimpleDBMSParser implements SimpleDBMSParserConstants {
         String rightOperand = "";
         String leftOperand = "";
         switch (op) {
-          case "<":
+          case "<":                     //calculate comparable operands with "<".
             rightOperand = operands.get(operands.size() - 1);
             operands.remove(operands.size() - 1);
             leftOperand = operands.get(operands.size() - 1);
             operands.remove(operands.size() - 1);
-            if (leftOperand.equals("null") || rightOperand.equals("null")) {
+            if (leftOperand.equals("null") || rightOperand.equals("null")) {            //if there is null, result is "unknown".
               operands.add("_unknown_");
               break;
             }
-            if (isInt(leftOperand)) {
+            if (isInt(leftOperand)) {           //if operands are integer,
               if (Integer.parseInt(leftOperand) < Integer.parseInt(rightOperand)) {
                 operands.add("_true_");
                 break;
@@ -1304,7 +1251,7 @@ public class SimpleDBMSParser implements SimpleDBMSParserConstants {
                 break;
               }
             }
-            if (isDate(leftOperand)) {
+            if (isDate(leftOperand)) {          //if operands are date,
               if (leftOperand.compareTo(rightOperand) < 0) {
                 operands.add("_true_");
                 break;
@@ -1314,7 +1261,7 @@ public class SimpleDBMSParser implements SimpleDBMSParserConstants {
                 break;
               }
             }
-            if (isCharString(leftOperand)) {
+            if (isCharString(leftOperand)) {    //if operands are charString,
               if (leftOperand.substring(1, leftOperand.length() - 1).compareTo(rightOperand.substring(1, rightOperand.length() - 1)) < 0) {
                 operands.add("_true_");
                 break;
@@ -1326,7 +1273,7 @@ public class SimpleDBMSParser implements SimpleDBMSParserConstants {
             }
             break;
 
-          case ">":
+          case ">":                     //same with "<".
             rightOperand = operands.get(operands.size() - 1);
             operands.remove(operands.size() - 1);
             leftOperand = operands.get(operands.size() - 1);
@@ -1367,7 +1314,7 @@ public class SimpleDBMSParser implements SimpleDBMSParserConstants {
             }
             break;
 
-          case "=":
+          case "=":                     //same with "<".
             rightOperand = operands.get(operands.size() - 1);
             operands.remove(operands.size() - 1);
             leftOperand = operands.get(operands.size() - 1);
@@ -1408,7 +1355,7 @@ public class SimpleDBMSParser implements SimpleDBMSParserConstants {
             }
             break;
 
-          case "<=":
+          case "<=":            //same with "<".
             rightOperand = operands.get(operands.size() - 1);
             operands.remove(operands.size() - 1);
             leftOperand = operands.get(operands.size() - 1);
@@ -1449,7 +1396,7 @@ public class SimpleDBMSParser implements SimpleDBMSParserConstants {
             }
             break;
 
-          case ">=":
+          case ">=":            //same with "<".
             rightOperand = operands.get(operands.size() - 1);
             operands.remove(operands.size() - 1);
             leftOperand = operands.get(operands.size() - 1);
@@ -1490,7 +1437,7 @@ public class SimpleDBMSParser implements SimpleDBMSParserConstants {
             }
             break;
 
-          case "!=":
+          case "!=":            //same with "<".
             rightOperand = operands.get(operands.size() - 1);
             operands.remove(operands.size() - 1);
             leftOperand = operands.get(operands.size() - 1);
@@ -1531,12 +1478,12 @@ public class SimpleDBMSParser implements SimpleDBMSParserConstants {
             }
             break;
 
-          case "is":
+          case "is":            //"is" operator only appears in "null value predicate".
             rightOperand = operands.get(operands.size() - 1);
             operands.remove(operands.size() - 1);
             leftOperand = operands.get(operands.size() - 1);
             operands.remove(operands.size() - 1);
-            if (rightOperand.equals("null")) {
+            if (rightOperand.equals("null")) {          //if predicate is "is null",
               if (leftOperand.equals("null")) {
                 operands.add("_true_");
                 break;
@@ -1546,7 +1493,7 @@ public class SimpleDBMSParser implements SimpleDBMSParserConstants {
                 break;
               }
             }
-            else {
+            else {              //if predicate is "is not null",
               if (leftOperand.equals("null")) {
                 operands.add("_false_");
                 break;
@@ -1557,7 +1504,7 @@ public class SimpleDBMSParser implements SimpleDBMSParserConstants {
               }
             }
 
-          case "not":
+          case "not":           //"not" is unary operator.
             rightOperand = operands.get(operands.size() - 1);
             operands.remove(operands.size() - 1);
             if (rightOperand.equals("_true_")) {
@@ -1573,7 +1520,7 @@ public class SimpleDBMSParser implements SimpleDBMSParserConstants {
               break;
             }
 
-          case "and":
+          case "and":           //typical "and" operator.
             rightOperand = operands.get(operands.size() - 1);
             operands.remove(operands.size() - 1);
             leftOperand = operands.get(operands.size() - 1);
@@ -1591,7 +1538,7 @@ public class SimpleDBMSParser implements SimpleDBMSParserConstants {
               break;
             }
 
-          case "or":
+          case "or":            //typical "or" operator.
             rightOperand = operands.get(operands.size() - 1);
             operands.remove(operands.size() - 1);
             leftOperand = operands.get(operands.size() - 1);
@@ -1609,39 +1556,30 @@ public class SimpleDBMSParser implements SimpleDBMSParserConstants {
               break;
             }
 
-          default:
+          default:              //if nothing matched, it is an ERROR! (which will not happen by the way.)
             System.out.println("Error");
             break;
         }
-        //test
-        System.out.println(leftOperand + " " + op + " " + rightOperand);
-        System.out.println(operands.get(operands.size() - 1));
-        System.out.println("--");
-        //test
       }
-      else {
+      else {            //if it is operand, just push it to the stack.
         operands.add(op);
-        //test
-        System.out.println(op);
-        System.out.println("--");
-        //test
       }
     }
-    if (operands.get(0).equals("_true_")) return true;
+    if (operands.get(0).equals("_true_")) return true;          //final result.
     return false;
   }
 
-  private static ArrayList<ArrayList<String>> tableMaker(String tableName) {
+  private static ArrayList<ArrayList<String>> tableMaker(String tableName) {            //function for table making. data structure will be described in pdf report.
     ArrayList<ArrayList<String>> resultTable = new ArrayList<ArrayList<String>>();
     ArrayList<String> attributeMetaDataList = new ArrayList<String>();
     String[] attributeList = dbGet(tableName).split(",");
-    resultTable.add(new ArrayList<String>(Arrays.asList(attributeList)));
+    resultTable.add(new ArrayList<String>(Arrays.asList(attributeList)));               //table starts with attribute list.
     for (int i = 0; i != attributeList.length; i++) {
       attributeMetaDataList.add(dbGet(tableName + "/" + attributeList[i]));
     }
-    resultTable.add(attributeMetaDataList);
+    resultTable.add(attributeMetaDataList);             //second row of table stores meta data of each column.
     String pointer = dbGet(tableName + "\u005c"\u005c"_head_");
-    while (!pointer.equals("_none_")) {
+    while (!pointer.equals("_none_")) {                 //while pointer is not __none__, get records.
       String[] recordNode = dbGet(pointer).split("\u005c"\u005c"\u005c"");
       String[] record = recordNode[1].split("\u005c"");
       ArrayList<String> recordTemp = new ArrayList<String>(Arrays.asList(record));
@@ -1652,24 +1590,24 @@ public class SimpleDBMSParser implements SimpleDBMSParserConstants {
     return resultTable;
   }
 
-  private static ArrayList<Integer> tableValueFinder(ArrayList<ArrayList<String>> table, String column, String value) {
-        if (table.size() == 2) return null;
+  private static ArrayList<Integer> tableValueFinder(ArrayList<ArrayList<String>> table, String column, String value) {         //function for finding specific value in specific column.
+        if (table.size() == 2) return null;                     //if table has no record, return null.
     ArrayList<Integer> resultList = new ArrayList<Integer>();
     int columnIndex = -1;
     for (int i = 0; i != table.get(0).size(); i++) {
-      if (table.get(0).get(i).equals(column)) columnIndex = i;
+      if (table.get(0).get(i).equals(column)) columnIndex = i;          //find column index.
     }
     for (int i = 2; i != table.size(); i++) {
-      if (table.get(i).get(columnIndex).equals(value)) {
+      if (table.get(i).get(columnIndex).equals(value)) {                //find specific value of the column.
         resultList.add(i);
       }
     }
-    if (resultList.size() == 0) return null;
-    resultList.add(columnIndex);
+    if (resultList.size() == 0) return null;            //if nothing matched, return null.
+    resultList.add(columnIndex);                        //if there exist the value, add column index and return the list.
     return resultList;
   }
 
-  private static void recordInsert(String tableName, String primaryKey, String value) {
+  private static void recordInsert(String tableName, String primaryKey, String value) {                 //function for inserting value. data structure will be described in pdf report.
     String pointer = dbGet(tableName + "\u005c"\u005c"_head_");
     if (pointer.equals("_none_")) {
       String headPointer = tableName + "\u005c"\u005c"" + primaryKey;
@@ -1691,7 +1629,7 @@ public class SimpleDBMSParser implements SimpleDBMSParserConstants {
     }
   }
 
-  private static void recordUpdate(String tableName, String primaryKey, ArrayList<String> value) {
+  private static void recordUpdate(String tableName, String primaryKey, ArrayList<String> value) {              //function for updating value. data structure will be described in pdf report.
     String targetPointer = tableName + "\u005c"\u005c"" + primaryKey;
     String[] targetNode = dbGet(targetPointer).split("\u005c"\u005c"\u005c"");
     String newValue = value.get(0);
@@ -1702,7 +1640,7 @@ public class SimpleDBMSParser implements SimpleDBMSParserConstants {
     dbUpdate(targetPointer, newValue);
   }
 
-  private static void recordDelete(String tableName, String primaryKey) {
+  private static void recordDelete(String tableName, String primaryKey) {               //function for deleting value. data structure will be described in pdf report.
         String headPointer = dbGet(tableName + "\u005c"\u005c"_head_");
         String targetPointer = tableName + "\u005c"\u005c"" + primaryKey;
         String[] targetNode = dbGet(targetPointer).split("\u005c"\u005c"\u005c"");
@@ -1742,8 +1680,8 @@ public class SimpleDBMSParser implements SimpleDBMSParserConstants {
         }
   }
 
-  private static boolean referencedRecordDeletable(String referenceList, String value) {
-    if (referenceList.contains("+")) {
+  private static boolean referencedRecordDeletable(String referenceList, String value) {                //function for checking referential integrity constraints.
+    if (referenceList.contains("+")) {          //if more than one elements are in reference list, split it and run again.
       int idx = referenceList.indexOf("+");
       return referencedRecordDeletable(referenceList.substring(0, idx), value)
         && referencedRecordDeletable(referenceList.substring(idx + 1, referenceList.length()), value);
@@ -1753,21 +1691,21 @@ public class SimpleDBMSParser implements SimpleDBMSParserConstants {
       String tableName = tableColumnName[0];
       String columnName = tableColumnName[1];
       ArrayList<ArrayList<String>> table = tableMaker(tableName);
-      ArrayList<Integer> findResult = tableValueFinder(table, columnName, value);
-      if (findResult == null) {
+      ArrayList<Integer> findResult = tableValueFinder(table, columnName, value);       //find value in reference table.
+      if (findResult == null) {         //if nothing found, the value can be deleted.
         return true;
       }
-      else {
+      else {            //if something found,
         int colIdx = findResult.get(findResult.size() - 1);
         String[] metaDataList = table.get(1).get(colIdx).split(",");
-        if (metaDataList[1].equals("N")) {
+        if (metaDataList[1].equals("N")) {              //if the value cannot be replaced with null, the value cannot be deleted.
           return false;
         }
         else {
-          if (metaDataList[4].equals("NR")) {
+          if (metaDataList[4].equals("NR")) {           //if the column is not referenced, return true.
             return true;
           }
-          else {
+          else {                //if the column is referenced, test referencing tables again.
             return referencedRecordDeletable(metaDataList[6], value);
           }
         }
@@ -1775,8 +1713,8 @@ public class SimpleDBMSParser implements SimpleDBMSParserConstants {
     }
   }
 
-  private static void referencingRecordUpdate(String referenceList, String value) {
-    if (referenceList.contains("+")) {
+  private static void referencingRecordUpdate(String referenceList, String value) {             //function for updating records.
+    if (referenceList.contains("+")) {          //if more than one elements are in reference list, split it and run again.
       int idx = referenceList.indexOf("+");
       referencingRecordUpdate(referenceList.substring(0, idx), value);
       referencingRecordUpdate(referenceList.substring(idx + 1, referenceList.length()), value);
@@ -1788,10 +1726,10 @@ public class SimpleDBMSParser implements SimpleDBMSParserConstants {
       String columnName = tableColumnName[1];
       ArrayList<ArrayList<String>> table = tableMaker(tableName);
       ArrayList<Integer> findResult = tableValueFinder(table, columnName, value);
-      if (findResult == null) {
+      if (findResult == null) {                 //if nothing found, return.
         return;
       }
-      else {
+      else {            //if records having the value are found, change them into null.
         int colIdx = findResult.get(findResult.size() - 1);
         String[] metaDataList = table.get(1).get(colIdx).split(",");
         for (int i = 0; i != findResult.size() - 1; i++) {
@@ -1801,10 +1739,10 @@ public class SimpleDBMSParser implements SimpleDBMSParserConstants {
           record.set(colIdx, "null");
           recordUpdate(tableName, primaryKey, record);
         }
-        if (metaDataList[4].equals("NR")) {
+        if (metaDataList[4].equals("NR")) {             //if the column is not referenced, return true.
           return;
         }
-        else {
+        else {                  //if the column is referenced, run the function with referencing tables again.
           referencingRecordUpdate(metaDataList[6], value);
           return;
         }
@@ -1812,7 +1750,7 @@ public class SimpleDBMSParser implements SimpleDBMSParserConstants {
     }
   }
 
-  private static int[][] generateCombinations(int[] indices) {
+  private static int[][] generateCombinations(int[] indices) {          //function for generating record index pairs.
     int num = 1;
     for (int i = 0; i != indices.length; i++) {
       num *= indices[i];
@@ -1885,19 +1823,7 @@ public class SimpleDBMSParser implements SimpleDBMSParserConstants {
           insertHandler(q.substring(1, q.length()));
           break;
         case PRINT_DELETE:
-          /*System.out.println(q.substring(1, q.length()));
-          System.out.println("a\"b\"'c'\"\"d".split("\"\"")[1]);
-          System.out.println("abc".contains("bc"));
-          System.out.println(Character.isDigit("123".charAt(0)));*/
-          //deleteHandler(q.substring(1, q.length()));
-          int[][] testing = generateCombinations(new int[] { 5 });
-          for (int i = 0; i != testing.length; i++) {
-            for (int j = 0; j != testing[i].length; j++) {
-              System.out.print(testing[i][j]);
-              System.out.print(" ");
-            }
-            System.out.println("");
-          }
+          deleteHandler(q.substring(1, q.length()));
           break;
         case PRINT_SELECT:
           selectHandler(q.substring(1, q.length()));
